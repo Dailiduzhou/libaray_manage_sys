@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/Dailiduzhou/libaray_manage_sys/models"
-	"github.com/Dailiduzhou/libaray_manage_sys/utils"
+	"github.com/Dailiduzhou/library_manage_sys/models"
+	"github.com/Dailiduzhou/library_manage_sys/utils"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )

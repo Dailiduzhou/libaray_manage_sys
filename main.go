@@ -1,15 +1,18 @@
 package main
 
 import (
+	"log"
 	"time"
 
-	"github.com/Dailiduzhou/libaray_manage_sys/config"
+	"github.com/Dailiduzhou/library_manage_sys/config"
+	"github.com/Dailiduzhou/library_manage_sys/middleware"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	config.ConnectDB()
+	config.InitAdmin(config.DB)
 
 	r := gin.Default()
 
@@ -30,4 +33,8 @@ func main() {
 
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+
+	if err := middleware.InitSession(r); err != nil {
+		log.Printf("会话创建失败: %q", err)
+	}
 }

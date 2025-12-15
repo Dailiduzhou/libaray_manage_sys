@@ -1,4 +1,4 @@
-module github.com/Dailiduzhou/libaray_manage_sys
+module github.com/Dailiduzhou/library_manage_sys
 
 go 1.25.4
 
