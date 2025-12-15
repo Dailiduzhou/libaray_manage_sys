@@ -1,13 +1,36 @@
+// @title Library Management System API
+// @version 1.0
+// @description This is a library management system API
+// @termsOfService http://swagger.io/terms/
+// @contact.name API Support
+// @contact.email dailiduzhou@example.com
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+// @host localhost:8080
+// @BasePath /api
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/config"
 	"github.com/Dailiduzhou/library_manage_sys/middleware"
+	"github.com/Dailiduzhou/library_manage_sys/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
+	_ "github.com/Dailiduzhou/library_manage_sys/docs"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func main() {
@@ -16,7 +39,7 @@ func main() {
 
 	r := gin.Default()
 
-	config := cors.Config{
+	corsConfig := cors.Config{
 		AllowOrigins: []string{
 			"http://localhost:3000",
 			"http://localhost:5173",
@@ -29,7 +52,7 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}
 
-	r.Use(cors.New(config))
+	r.Use(cors.New(corsConfig))
 
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
@@ -37,4 +60,36 @@ func main() {
 	if err := middleware.InitSession(r); err != nil {
 		log.Printf("会话创建失败: %q", err)
 	}
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	routes.RegisterRoutes(r)
+
+	log.Println("服务器启动在 http://localhost:8080")
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("服务器启动失败: %v\n", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("正在关闭服务器...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("服务器强制关闭:", err)
+	}
+
+	sqlDB, _ := config.DB.DB()
+	sqlDB.Close()
+	log.Println("服务器已优雅退出")
 }

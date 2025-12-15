@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	controller "github.com/Dailiduzhou/library_manage_sys/controllers"
+	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-contrib/sessions/redis"
@@ -94,7 +94,7 @@ func AuthRequired() gin.HandlerFunc {
 
 		// 前端最好实现跳转登录页面的功能
 		if userID == nil {
-			c.JSON(http.StatusUnauthorized, controller.Response{
+			c.JSON(http.StatusUnauthorized, models.Response{
 				Code: 401,
 				Msg:  "请先登录",
 			})
@@ -114,14 +114,14 @@ func AdminRequired() gin.HandlerFunc {
 		role := session.Get("role")
 
 		if roleStr, ok := role.(string); !ok {
-			c.JSON(http.StatusInternalServerError, controller.Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "处理用户身份错误",
 			})
 			c.Abort()
 			return
 		} else if roleStr != "admin" {
-			c.JSON(http.StatusUnauthorized, controller.Response{
+			c.JSON(http.StatusUnauthorized, models.Response{
 				Code: 401,
 				Msg:  "权限不足",
 			})

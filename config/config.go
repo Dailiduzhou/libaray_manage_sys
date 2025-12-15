@@ -34,7 +34,7 @@ func getEnv(key, fallback string) string {
 func ConnectDB() {
 	dbUser := getEnv("DB_USER", "root")
 	dbPassword := getEnv("DB_PASSWORD", "123456")
-	dbHost := getEnv("DB_HOST", "db")
+	dbHost := getEnv("DB_HOST", "localhost")
 	dbPort := getEnv("DB_PORT", "3306")
 	dbName := getEnv("DB_NAME", "books")
 

@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/config"
@@ -22,18 +23,23 @@ var (
 	ErrDeleteBook     = errors.New("图书删除失败")
 )
 
-type Response struct {
-	Code int         `json:"code"`
-	Msg  string      `json:"msg"`
-	Data interface{} `json:"data"`
-}
-
+// @Summary 用户注册
+// @Description 创建新用户账号
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body models.RegisterRequest true "注册请求"
+// @Success 200 {object} models.Response "注册成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 409 {object} models.Response "用户已存在"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /register [post]
 func Register(c *gin.Context) {
 	var req models.RegisterRequest
 	var err error
 
 	if err = c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
 		})
@@ -43,13 +49,13 @@ func Register(c *gin.Context) {
 	var existingUser models.User
 	err = config.DB.Where("username = ?", req.Username).First(&existingUser).Error
 	if err == nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "用户已存在",
 		})
 		return
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "查询数据库失败",
 		})
@@ -58,7 +64,7 @@ func Register(c *gin.Context) {
 
 	hashedpassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "密码加密错误",
 		})
@@ -71,14 +77,14 @@ func Register(c *gin.Context) {
 	}
 
 	if err = config.DB.Create(&newUser).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "创建用户失败",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "注册成功",
 		Data: gin.H{
@@ -88,12 +94,23 @@ func Register(c *gin.Context) {
 	})
 }
 
+// @Summary 用户登录
+// @Description 用户身份验证
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body models.LoginRequest true "登录请求"
+// @Success 200 {object} models.Response "登录成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 403 {object} models.Response "认证失败"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /login [post]
 func Login(c *gin.Context) {
 	var req models.LoginRequest
 	var err error
 
 	if err = c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
 		})
@@ -103,14 +120,14 @@ func Login(c *gin.Context) {
 	var user models.User
 	err = config.DB.Where("username = ?", req.Username).First(&user).Error
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "查询数据库失败",
 		})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusForbidden, Response{
+		c.JSON(http.StatusForbidden, models.Response{
 			Code: 403,
 			Msg:  "用户不存在",
 		})
@@ -119,7 +136,7 @@ func Login(c *gin.Context) {
 
 	err = utils.ComparePassword(user.Password, req.Password)
 	if err != nil {
-		c.JSON(http.StatusForbidden, Response{
+		c.JSON(http.StatusForbidden, models.Response{
 			Code: 403,
 			Msg:  "密码错误",
 		})
@@ -130,14 +147,14 @@ func Login(c *gin.Context) {
 	session.Set("user_id", user.ID)
 	session.Set("role", user.Role)
 	if err := session.Save(); err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "鉴权组件错误",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "登陆成功",
 		Data: gin.H{
@@ -147,28 +164,52 @@ func Login(c *gin.Context) {
 	})
 }
 
+// @Summary 用户登出
+// @Description 清除会话
+// @Tags auth
+// @Security ApiKeyAuth
+// @Produce json
+// @Success 200 {object} models.Response "登出成功"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /logout [post]
 func Logout(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 	if err := session.Save(); err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "登出失败",
 		})
 	}
 
 	// 希望前端实现跳转登录界面的功能
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "登出成功",
 	})
 }
 
+// @Summary 创建图书
+// @Description 添加新图书（管理员权限）
+// @Tags books
+// @Security ApiKeyAuth
+// @Accept multipart/form-data
+// @Produce json
+// @Param title formData string true "书名"
+// @Param author formData string true "作者"
+// @Param summary formData string false "简介"
+// @Param cover formData file false "封面图片"
+// @Param initial_stock formData integer true "初始库存" minimum(0)
+// @Success 200 {object} models.Response{data=models.Book} "创建成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 409 {object} models.Response "图书已存在"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /createbook [post]
 func CreateBook(c *gin.Context) {
 	var req models.CreateBookRequest
 
 	if err := c.ShouldBind(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
 		})
@@ -178,14 +219,14 @@ func CreateBook(c *gin.Context) {
 	var existingBook models.Book
 	err := config.DB.Where("title = ? AND author = ?", req.Title, req.Author).First(&existingBook).Error
 	if err == nil {
-		c.JSON(http.StatusConflict, Response{
+		c.JSON(http.StatusConflict, models.Response{
 			Code: 409,
 			Msg:  "该图书已存在(书名和作者相同)",
 		})
 		return
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",
 		})
@@ -196,7 +237,7 @@ func CreateBook(c *gin.Context) {
 	if req.Cover != nil {
 		savePath, err := utils.SaveImages(c, req.Cover)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "图片保存失败",
 			})
@@ -225,20 +266,31 @@ func CreateBook(c *gin.Context) {
 			utils.RemoveFile(finalCoverPath)
 		}
 
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "创建图书失败",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "图书创建成功",
 		Data: newBook,
 	})
 }
 
+// @Summary 获取图书列表
+// @Description 按条件查询图书（带分页）
+// @Tags books
+// @Security ApiKeyAuth
+// @Produce json
+// @Param title query string false "按书名模糊查询"
+// @Param author query string false "按作者模糊查询"
+// @Param summary query string false "按简介模糊查询"
+// @Success 200 {object} models.Response{data=[]models.Book} "查询成功"
+// @Failure 500 {object} models.Response "数据库错误"
+// @Router /getbooks [get]
 func GetBooks(c *gin.Context) {
 	var books []models.Book
 
@@ -259,30 +311,59 @@ func GetBooks(c *gin.Context) {
 	}
 
 	if err := query.Order("id desc").Find(&books).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "查询成功",
 		Data: books,
 	})
 }
 
+// @Summary 更新图书
+// @Description 修改图书信息（管理员权限）
+// @Tags books
+// @Security ApiKeyAuth
+// @Accept multipart/form-data
+// @Produce json
+// @Param id formData uint true "图书ID"
+// @Param title formData string false "新书名"
+// @Param author formData string false "新作者"
+// @Param summary formData string false "新简介"
+// @Param cover formData file false "新封面"
+// @Param stock formData integer false "当前库存" minimum(0)
+// @Param total_stock formData integer false "总库存" minimum(0)
+// @Success 200 {object} models.Response{data=models.Book} "更新成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 404 {object} models.Response "图书不存在"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /books/{id} [put]
 func UpdateBook(c *gin.Context) {
+	id := c.Param("id")
+	bookID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.Response{
+			Code: 400,
+			Msg:  "无效的图书ID",
+		})
+		return
+	}
+
 	var req models.UpdateBookRequest
 
 	if err := c.ShouldBind(&req); err != nil {
-		c.JSON(http.StatusNotFound, Response{
+		c.JSON(http.StatusNotFound, models.Response{
 			Code: 404,
 			Msg:  "参数设定错误",
 		})
 		return
 	}
+	req.ID = uint(bookID)
 
 	tx := config.DB.Begin()
 	defer func() {
@@ -297,12 +378,12 @@ func UpdateBook(c *gin.Context) {
 	if result.Error != nil {
 		tx.Rollback()
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, Response{
+			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 		} else {
-			c.JSON(http.StatusInternalServerError, Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "数据库查询失败: ",
 			})
@@ -335,7 +416,7 @@ func UpdateBook(c *gin.Context) {
 
 		if newStock > newTotalStock {
 			tx.Rollback()
-			c.JSON(http.StatusBadRequest, Response{
+			c.JSON(http.StatusBadRequest, models.Response{
 				Code: 400,
 				Msg:  "当前库存不能大于总库存",
 			})
@@ -350,7 +431,7 @@ func UpdateBook(c *gin.Context) {
 		coverPath, err := utils.SaveImages(c, req.Cover)
 		if err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "封面图片保存失败",
 			})
@@ -366,7 +447,7 @@ func UpdateBook(c *gin.Context) {
 	if len(updates) > 0 {
 		if err := tx.Model(&book).Updates(updates).Error; err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "更新失败: " + err.Error(),
 			})
@@ -375,7 +456,7 @@ func UpdateBook(c *gin.Context) {
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "提交事务失败: ",
 		})
@@ -383,24 +464,40 @@ func UpdateBook(c *gin.Context) {
 	}
 	config.DB.First(&book, req.ID)
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "图书更新成功",
 		Data: book,
 	})
 }
 
+// @Summary 删除图书
+// @Description 删除指定图书（管理员权限）
+// @Tags books
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param id path uint true "图书ID" models.FindBookRequest true "图书ID"
+// @Success 200 {object} models.Response "删除成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 404 {object} models.Response "图书不存在"
+// @Failure 409 {object} models.Response "图书仍在借阅中"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /deletebook [delete]
 func DeleteBooks(c *gin.Context) {
-	var req models.FindBookRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+	id := c.Param("id")
+	bookID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
-			Msg:  "参数设定错误",
+			Msg:  "无效的图书ID",
 		})
 		return
 	}
 
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
+	req := models.FindBookRequest{ID: uint(bookID)}
+
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		var existingBook models.Book
 
 		if err := tx.First(&existingBook, req.ID).Error; err != nil {
@@ -423,38 +520,52 @@ func DeleteBooks(c *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, ErrBookNotFound) {
-			c.JSON(http.StatusNotFound, Response{
+			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 			return
 		}
 		if errors.Is(err, ErrDeleteBook) {
-			c.JSON(http.StatusInternalServerError, Response{
+			c.JSON(http.StatusInternalServerError, models.Response{
 				Code: 500,
 				Msg:  "删除图书失败",
 			})
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统繁忙,请稍后再试",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "删除图书成功",
 	})
 }
 
+// controller.go 借书接口注释
+// @Summary 借阅图书
+// @Description 创建借阅记录
+// @Tags borrow
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param request body models.FindBookRequest true "图书ID"
+// @Success 200 {object} models.Response "借阅成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 404 {object} models.Response "图书不存在"
+// @Failure 409 {object} models.Response "库存不足"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /borrow [post]
 func BorrowBook(c *gin.Context) {
 	var req models.FindBookRequest
 	userID := c.GetUint("user_id")
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定失败",
 		})
@@ -495,39 +606,51 @@ func BorrowBook(c *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, ErrBookNotFound) {
-			c.JSON(http.StatusNotFound, Response{
+			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 			return
 		}
 		if errors.Is(err, ErrNoStock) {
-			c.JSON(http.StatusOK, Response{
+			c.JSON(http.StatusOK, models.Response{
 				Code: 200,
 				Msg:  "图书无库存",
 			})
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统繁忙,请稍后再试",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "借书成功",
 		Data: borrowRecord,
 	})
 }
 
+// @Summary 归还图书
+// @Description 更新借阅状态
+// @Tags borrow
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param request body models.FindBookRequest true "图书ID"
+// @Success 200 {object} models.Response{data=models.BorrowRecord} "归还成功"
+// @Failure 400 {object} models.Response "参数错误"
+// @Failure 404 {object} models.Response "记录不存在"
+// @Failure 500 {object} models.Response "服务器错误"
+// @Router /return [post]
 func ReturnBook(c *gin.Context) {
 	var req models.FindBookRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, Response{
+		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
 		})
@@ -567,7 +690,7 @@ func ReturnBook(c *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, ErrBookNotFound) {
-			c.JSON(http.StatusNotFound, Response{
+			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
@@ -575,20 +698,20 @@ func ReturnBook(c *gin.Context) {
 		}
 
 		if errors.Is(err, ErrRecordNotFound) {
-			c.JSON(http.StatusFound, Response{
+			c.JSON(http.StatusFound, models.Response{
 				Code: 302,
 				Msg:  "找不到图书记录",
 			})
 		}
 
-		c.JSON(http.StatusInternalServerError, Response{
+		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统错误",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "还书成功",
 		Data: borrowRecord,
