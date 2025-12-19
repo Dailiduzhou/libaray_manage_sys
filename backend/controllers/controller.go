@@ -742,3 +742,53 @@ func ReturnBook(c *gin.Context) {
 		Data: borrowRecord,
 	})
 }
+
+// @Summary 查询个人借书记录
+// @Description 查询借书记录（需登录）
+// @Tags auth
+// @Security ApiKeyAuth
+// @Produce json
+// @Param id path uint ture "用户ID"
+// @Success 200 {object} models.Response{data=[]models.BorrowRecord} "查询成功"
+// @Failure 404 {object} models.Response "查询成功,无借书记录"
+// @Failure 500 {object} models.Response "用户ID解析错误"
+// @Failure 500 {object} models.Response "数据库查询失败"
+// @Router /api/record/{id} [post]
+func BorrowRecords(c *gin.Context) {
+	id := c.Param("id")
+	userID, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "用户ID解析错误",
+		})
+		return
+	}
+
+	var records []models.BorrowRecord
+	query := config.DB.Model(&models.BorrowRecord{})
+
+	query = config.DB.Where("user_id = ?", userID)
+
+	if err := query.Order("id desc").Find(&records).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "数据库查询失败",
+		})
+		return
+	}
+
+	if len(records) == 0 {
+		c.JSON(http.StatusNotFound, models.Response{
+			Code: 404,
+			Msg:  "查询成功,无借书记录",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Code: 200,
+		Msg:  "查询成功",
+		Data: records,
+	})
+}

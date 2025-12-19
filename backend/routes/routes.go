@@ -20,6 +20,7 @@ func RegisterRoutes(r *gin.Engine) {
 		authGroup.Use(middleware.AuthRequired())
 		{
 			authGroup.POST("/logout", controller.Logout)
+			authGroup.POST("/records/:id", controller.BorrowRecords)
 			borrows := api.Group("/borrows")
 			{
 				// 创建借阅记录 (借书)

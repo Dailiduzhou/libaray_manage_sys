@@ -479,6 +479,41 @@ paths:
       summary: 用户登出
       tags:
       - auth
+  /api/record/{id}:
+    post:
+      description: 查询借书记录（需登录）
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 查询成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.BorrowRecord'
+                  type: array
+              type: object
+        "404":
+          description: 查询成功,无借书记录
+          schema:
+            $ref: '#/definitions/models.Response'
+        "500":
+          description: 数据库查询失败
+          schema:
+            $ref: '#/definitions/models.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 查询个人借书记录
+      tags:
+      - auth
 schemes:
 - https
 securityDefinitions:
