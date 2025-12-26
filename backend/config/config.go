@@ -12,11 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	DefaultCoverPath = "uploads/default.png"
-	DefaultSummary   = "暂无简介"
-)
-
 var DB *gorm.DB
 
 type Config struct {

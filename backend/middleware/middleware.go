@@ -39,7 +39,7 @@ func InitSession(r *gin.Engine) error {
 		Path:     "/",
 		MaxAge:   86400 * 7,
 		HttpOnly: true,
-		Secure:   gin.Mode() == gin.ReleaseMode,
+		Secure:   false,
 		SameSite: 0,
 	})
 

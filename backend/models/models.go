@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	DefaultCoverPath = "uploads/default.png"
+	DefaultSummary   = "暂无简介"
+)
+
 // @Description 通用响应结构
 // @param code int "状态码"
 // @param msg string "消息内容"

@@ -235,7 +235,7 @@ func CreateBook(c *gin.Context) {
 		return
 	}
 
-	finalCoverPath := config.DefaultCoverPath
+	finalCoverPath := models.DefaultCoverPath
 	if req.Cover != nil && req.Cover.Size > 0 {
 		log.Printf("有封面文件上传，大小: %d", req.Cover.Size)
 		savePath, err := utils.SaveImages(c, req.Cover)
@@ -250,7 +250,7 @@ func CreateBook(c *gin.Context) {
 	} else {
 		log.Printf("没有封面文件上传或文件为空，使用默认路径: %s", finalCoverPath)
 	}
-	finalSummary := config.DefaultSummary
+	finalSummary := models.DefaultSummary
 	if req.Summary != "" {
 		finalSummary = req.Summary
 	}

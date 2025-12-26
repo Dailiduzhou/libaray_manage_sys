@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -52,8 +53,10 @@ func SaveImages(c *gin.Context, file *multipart.FileHeader) (string, error) {
 
 func RemoveFile(filePath string) error {
 	if filePath != "" {
-		err := os.Remove(filePath)
-		return err
+		if filePath != models.DefaultCoverPath {
+			err := os.Remove(filePath)
+			return err
+		}
 	}
 	return nil
 }
