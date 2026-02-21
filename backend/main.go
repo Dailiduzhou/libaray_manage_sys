@@ -28,6 +28,7 @@ import (
 	"github.com/Dailiduzhou/library_manage_sys/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	_ "github.com/Dailiduzhou/library_manage_sys/docs"
 	swaggerFiles "github.com/swaggo/files"
@@ -37,6 +38,9 @@ import (
 func main() {
 	config.ConnectDB()
 	config.InitAdmin(config.DB)
+
+	logger := middleware.InitLogger()
+	defer logger.Sync()
 
 	r := gin.Default()
 
@@ -61,6 +65,7 @@ func main() {
 	}
 
 	r.Use(cors.New(corsConfig))
+	r.Use(middleware.GinLoggerAndMetrics(logger))
 	r.Static("/uploads", "./uploads")
 
 	r.Use(gin.Logger())
@@ -71,6 +76,11 @@ func main() {
 	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "pong"})
+	})
 
 	routes.RegisterUserRoutes(r)
 	routes.RegisterBookRouters(r)

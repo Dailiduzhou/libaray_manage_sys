@@ -39,7 +39,7 @@ func ConnectDB() {
 	var err error
 
 	maxRetries := 30
-	for i := 0; i < maxRetries; i++ {
+	for i := range maxRetries {
 		DB, err = gorm.Open(mysql.Open(dsnRoot), &gorm.Config{})
 		if err == nil {
 			break
@@ -76,7 +76,6 @@ func ConnectDB() {
 }
 
 func InitAdmin(db *gorm.DB) {
-
 	adminUser := os.Getenv("ADMIN_USERNAME")
 	if adminUser == "" {
 		adminUser = "admin"
