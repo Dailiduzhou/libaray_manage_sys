@@ -1,0 +1,3 @@
+BookRepository interface in backend/repositories/interfaces.go is now ORM-agnostic.
+- All former methods taking `db *gorm.DB` have been replaced with signatures over domain types and primitives.
+- No `*gorm.DB` or `gorm.` identifiers appear in the interface file according to `rg "*gorm.DB|gorm." backend/repositories/interfaces.go -n`.

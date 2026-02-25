@@ -1,0 +1,3 @@
+- BookRepository interface now ORM-agnostic; concrete gormBookRepository holds *gorm.DB and exposes methods without db parameter.
+- Lock-sensitive operations use gorm clause.Locking with "UPDATE" to ensure row-level consistency for stock and lock flows.
+- UpdateBookStockWithTotal enforces non-negative values and newStock <= newTotalStock, performing updates atomically in a transaction.

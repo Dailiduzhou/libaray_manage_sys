@@ -24,8 +24,11 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/config"
+	controller "github.com/Dailiduzhou/library_manage_sys/controllers"
 	"github.com/Dailiduzhou/library_manage_sys/middleware"
+	"github.com/Dailiduzhou/library_manage_sys/repositories"
 	"github.com/Dailiduzhou/library_manage_sys/routes"
+	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -82,8 +85,26 @@ func main() {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
-	routes.RegisterUserRoutes(r)
-	routes.RegisterBookRouters(r)
+	// Create repositories
+	bookRepo := repositories.NewGormBookRepository(config.DB)
+	userRepo := repositories.NewGormUserRepository()
+	borrowRepo := repositories.NewGormBorrowRepository(config.DB)
+	transactor := repositories.NewGormTransactor(config.DB)
+	_ = userRepo // userRepo is reserved for future use
+
+	// Create services
+	bookService := services.NewBookService(bookRepo)
+	userService := services.NewUserService(config.DB, userRepo)
+	borrowService := services.NewBorrowService(borrowRepo, bookRepo, transactor)
+
+	// Create handlers
+	bookHandler := controller.NewBookHandler(bookService)
+	userHandler := controller.NewUserHandler(userService)
+	borrowHandler := controller.NewBorrowHandler(borrowService)
+
+	// Register routes
+	routes.RegisterUserRoutes(r, userHandler)
+	routes.RegisterBookRouters(r, bookHandler, borrowHandler)
 
 	log.Println("服务器启动")
 	srv := &http.Server{

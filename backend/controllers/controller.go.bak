@@ -2,48 +2,29 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/Dailiduzhou/library_manage_sys/config"
 	"github.com/Dailiduzhou/library_manage_sys/models"
-	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/Dailiduzhou/library_manage_sys/utils"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// BookHandler handles book-related HTTP requests.
-type BookHandler struct {
-	bookService services.BookService
-}
-
-// NewBookHandler creates a new BookHandler.
-func NewBookHandler(bookService services.BookService) *BookHandler {
-	return &BookHandler{
-		bookService: bookService,
-	}
-}
-
-// UserHandler handles user-related HTTP requests.
-type UserHandler struct {
-	userService services.UserService
-}
-
-// NewUserHandler creates a new UserHandler.
-func NewUserHandler(userService services.UserService) *UserHandler {
-	return &UserHandler{userService: userService}
-}
-
-// BorrowHandler handles borrow-related HTTP requests.
-type BorrowHandler struct {
-	borrowService services.BorrowService
-}
-
-// NewBorrowHandler creates a new BorrowHandler.
-func NewBorrowHandler(borrowService services.BorrowService) *BorrowHandler {
-	return &BorrowHandler{borrowService: borrowService}
-}
+var (
+	ErrBookNotFound   = errors.New("图书不存在")
+	ErrNoStock        = errors.New("图书库存不足")
+	ErrRecordNotFound = errors.New("借书记录查询失败")
+	ErrBookBorrowed   = errors.New("图书仍在借")
+	ErrDeleteBook     = errors.New("图书删除失败")
+	ErrDeleteCover    = errors.New("封面删除失败")
+)
 
 // @Summary 用户注册
 // @Description 创建新用户账号
@@ -56,10 +37,11 @@ func NewBorrowHandler(borrowService services.BorrowService) *BorrowHandler {
 // @Failure 409 {object} models.Response "用户已存在"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/auth/register [post]
-func (h *UserHandler) Register(c *gin.Context) {
+func Register(c *gin.Context) {
 	var req models.RegisterRequest
+	var err error
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
@@ -67,15 +49,37 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	newUser, err := h.userService.Register(req.Username, req.Password)
+	var existingUser models.User
+	err = config.DB.Where("username = ?", req.Username).First(&existingUser).Error
+	if err == nil {
+		c.JSON(http.StatusBadRequest, models.Response{
+			Code: 400,
+			Msg:  "用户已存在",
+		})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "查询数据库失败",
+		})
+		return
+	}
+
+	hashedpassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		if errors.Is(err, services.ErrUserAlreadyExists) {
-			c.JSON(http.StatusBadRequest, models.Response{
-				Code: 400,
-				Msg:  "用户已存在",
-			})
-			return
-		}
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "密码加密错误",
+		})
+	}
+
+	newUser := models.User{
+		Username: req.Username,
+		Password: hashedpassword,
+		Role:     "user",
+	}
+
+	if err = config.DB.Create(&newUser).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "创建用户失败",
@@ -104,10 +108,11 @@ func (h *UserHandler) Register(c *gin.Context) {
 // @Failure 403 {object} models.Response "认证失败"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/auth/login [post]
-func (h *UserHandler) Login(c *gin.Context) {
+func Login(c *gin.Context) {
 	var req models.LoginRequest
+	var err error
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
@@ -115,15 +120,25 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.Login(req.Username, req.Password)
+	var user models.User
+	err = config.DB.Where("username = ?", req.Username).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusForbidden, models.Response{
+			Code: 403,
+			Msg:  "用户不存在",
+		})
+		return
+	}
 	if err != nil {
-		if errors.Is(err, services.ErrUserNotFound) {
-			c.JSON(http.StatusForbidden, models.Response{
-				Code: 403,
-				Msg:  "用户不存在",
-			})
-			return
-		}
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "查询数据库失败",
+		})
+		return
+	}
+
+	err = utils.ComparePassword(user.Password, req.Password)
+	if err != nil {
 		c.JSON(http.StatusForbidden, models.Response{
 			Code: 403,
 			Msg:  "密码错误",
@@ -160,7 +175,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 // @Success 200 {object} models.Response "登出成功"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/auth/logout [post]
-func (h *UserHandler) Logout(c *gin.Context) {
+func Logout(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 	if err := session.Save(); err != nil {
@@ -168,9 +183,9 @@ func (h *UserHandler) Logout(c *gin.Context) {
 			Code: 500,
 			Msg:  "登出失败",
 		})
-		return
 	}
 
+	// 希望前端实现跳转登录界面的功能
 	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "登出成功",
@@ -193,13 +208,30 @@ func (h *UserHandler) Logout(c *gin.Context) {
 // @Failure 409 {object} models.Response "图书已存在"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/admin/books [post]
-func (h *BookHandler) CreateBook(c *gin.Context) {
+func CreateBook(c *gin.Context) {
 	var req models.CreateBookRequest
 
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "参数设定错误",
+		})
+		return
+	}
+
+	var existingBook models.Book
+	err := config.DB.Where("title = ? AND author = ?", req.Title, req.Author).First(&existingBook).Error
+	if err == nil {
+		c.JSON(http.StatusConflict, models.Response{
+			Code: 409,
+			Msg:  "该图书已存在(书名和作者相同)",
+		})
+		return
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, models.Response{
+			Code: 500,
+			Msg:  "数据库查询失败",
 		})
 		return
 	}
@@ -219,26 +251,30 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 	} else {
 		log.Printf("没有封面文件上传或文件为空，使用默认路径: %s", finalCoverPath)
 	}
-
-	finalSummary := req.Summary
-	if finalSummary == "" {
-		finalSummary = models.DefaultSummary
+	finalSummary := models.DefaultSummary
+	if req.Summary != "" {
+		finalSummary = req.Summary
 	}
 
-	newBook, err := h.bookService.CreateBook(req.Title, req.Author, finalSummary, finalCoverPath, req.InitialStock)
-	if err != nil {
-		if req.Cover != nil && req.Cover.Size != 0 {
-			if removeErr := utils.RemoveFile(finalCoverPath); removeErr != nil {
-				log.Printf("封面删除失败: %v", removeErr)
-			}
-		}
+	newBook := models.Book{
+		Title:        req.Title,
+		Author:       req.Author,
+		Summary:      finalSummary,
+		CoverPath:    finalCoverPath,
+		InitialStock: req.InitialStock,
+		Stock:        req.InitialStock,
+		TotalStock:   req.InitialStock,
+	}
 
-		if errors.Is(err, services.ErrBookAlreadyExists) {
-			c.JSON(http.StatusConflict, models.Response{
-				Code: 409,
-				Msg:  "该图书已存在(书名和作者相同)",
-			})
-			return
+	if err := config.DB.Create(&newBook).Error; err != nil {
+		if req.Cover != nil && req.Cover.Size != 0 {
+			if err := utils.RemoveFile(finalCoverPath); err != nil {
+				c.JSON(http.StatusInternalServerError, models.Response{
+					Code: 500,
+					Msg:  "删除封面失败",
+				})
+				return
+			}
 		}
 
 		c.JSON(http.StatusInternalServerError, models.Response{
@@ -266,13 +302,26 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 // @Success 200 {object} models.Response{data=[]models.Book} "查询成功"
 // @Failure 500 {object} models.Response "数据库错误"
 // @Router /api/books [get]
-func (h *BookHandler) GetBooks(c *gin.Context) {
+func GetBooks(c *gin.Context) {
+	var books []models.Book
+
 	title := c.Query("title")
 	author := c.Query("author")
 	summary := c.Query("summary")
 
-	books, err := h.bookService.GetBooks(title, author, summary)
-	if err != nil {
+	query := config.DB.Model(&models.Book{})
+
+	if title != "" {
+		query = query.Where("title LIKE ?", "%"+title+"%")
+	}
+	if author != "" {
+		query = query.Where("author LIKE ?", "%"+author+"%")
+	}
+	if summary != "" {
+		query = query.Where("summary LIKE ?", "%"+summary+"%")
+	}
+
+	if err := query.Order("id desc").Find(&books).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",
@@ -305,7 +354,7 @@ func (h *BookHandler) GetBooks(c *gin.Context) {
 // @Failure 404 {object} models.Response "图书不存在"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/admin/books/{id} [put]
-func (h *BookHandler) UpdateBook(c *gin.Context) {
+func UpdateBook(c *gin.Context) {
 	id := c.Param("id")
 	bookID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
@@ -317,16 +366,79 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 	}
 
 	var req models.UpdateBookRequest
+
 	if err := c.ShouldBind(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.Response{
-			Code: 400,
+		c.JSON(http.StatusNotFound, models.Response{
+			Code: 404,
 			Msg:  "参数设定错误",
 		})
 		return
 	}
 	req.ID = uint(bookID)
 
-	var finalCoverPath string
+	tx := config.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var book models.Book
+	result := tx.Set("gorm:query_option", "FOR UPDATE").First(&book, req.ID)
+
+	if result.Error != nil {
+		tx.Rollback()
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, models.Response{
+				Code: 404,
+				Msg:  "图书不存在",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, models.Response{
+				Code: 500,
+				Msg:  "数据库查询失败: ",
+			})
+		}
+		return
+	}
+
+	updates := make(map[string]interface{})
+
+	if req.Title != "" {
+		updates["title"] = req.Title
+	}
+	if req.Author != "" {
+		updates["author"] = req.Author
+	}
+	if req.Summary != "" {
+		updates["summary"] = req.Summary
+	}
+
+	if req.Stock >= 0 || req.TotalStock > 0 {
+		newStock := book.Stock
+		newTotalStock := book.TotalStock
+
+		if req.Stock >= 0 {
+			newStock = req.Stock
+		}
+		if req.TotalStock > 0 {
+			newTotalStock = req.TotalStock
+		}
+
+		if newStock > newTotalStock {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, models.Response{
+				Code: 400,
+				Msg:  "当前库存不能大于总库存",
+			})
+			return
+		}
+
+		updates["stock"] = newStock
+		updates["total_stock"] = newTotalStock
+	}
+
+	finalCoverPath := book.CoverPath
 	if req.Cover != nil && req.Cover.Size > 0 {
 		log.Printf("有封面文件上传，大小: %d", req.Cover.Size)
 		savePath, err := utils.SaveImages(c, req.Cover)
@@ -338,35 +450,36 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 			return
 		}
 		finalCoverPath = savePath
+	} else {
+		log.Printf("没有封面文件上传或文件为空,使用原有路径: %s", finalCoverPath)
 	}
 
-	book, err := h.bookService.UpdateBook(req.ID, req.Title, req.Author, req.Summary, finalCoverPath, req.Stock, req.TotalStock)
-	if err != nil {
-		if errors.Is(err, services.ErrBookNotFound) {
-			c.JSON(http.StatusNotFound, models.Response{
-				Code: 404,
-				Msg:  "图书不存在",
+	updates["cover_path"] = finalCoverPath
+
+	if len(updates) > 0 {
+		if err := tx.Model(&book).Updates(updates).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, models.Response{
+				Code: 500,
+				Msg:  "更新失败: " + err.Error(),
 			})
 			return
 		}
-		if errors.Is(err, services.ErrStockInvalid) {
-			c.JSON(http.StatusBadRequest, models.Response{
-				Code: 400,
-				Msg:  err.Error(),
-			})
-			return
-		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
-			Msg:  "更新失败: " + err.Error(),
+			Msg:  "提交事务失败: ",
 		})
 		return
 	}
+	config.DB.First(&book, req.ID)
 
 	c.JSON(http.StatusOK, models.Response{
 		Code: 200,
 		Msg:  "图书更新成功",
-		Data: *book,
+		Data: book,
 	})
 }
 
@@ -382,7 +495,7 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 // @Failure 409 {object} models.Response "图书仍在借阅中"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/admin/books/{id} [delete]
-func (h *BookHandler) DeleteBooks(c *gin.Context) {
+func DeleteBooks(c *gin.Context) {
 	id := c.Param("id")
 	bookID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
@@ -393,49 +506,80 @@ func (h *BookHandler) DeleteBooks(c *gin.Context) {
 		return
 	}
 
-	book, err := h.bookService.GetBookByID(uint(bookID))
+	req := models.FindBookRequest{ID: uint(bookID)}
+
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		var existingBook models.Book
+
+		if err := tx.First(&existingBook, req.ID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrBookNotFound
+			}
+			return err
+		}
+
+		if existingBook.Stock != existingBook.TotalStock {
+			return ErrBookBorrowed
+		}
+
+		if err := tx.Delete(&existingBook).Error; err != nil {
+			return ErrDeleteBook
+		}
+
+		fmt.Printf("[Debug] DB路径: '%s' vs 默认常量: '%s'\n", existingBook.CoverPath, models.DefaultCoverPath)
+
+		if existingBook.CoverPath == models.DefaultCoverPath {
+			log.Printf("使用了默认封面,不执行删除")
+		} else {
+			if err := utils.RemoveFile(existingBook.CoverPath); err != nil {
+				return ErrDeleteCover
+			}
+		}
+
+		// if existingBook.CoverPath == models.DefaultCoverPath {
+		// 	log.Printf("使用了默认封面, 跳过物理删除")
+		// } else {
+		// 	// 这里修改了！即使出错也不 return ErrDeleteCover
+		// 	err := utils.RemoveFile(existingBook.CoverPath)
+		// 	if err != nil {
+		// 		// 只在控制台打印一条警告，不影响 HTTP 返回 200
+		// 		fmt.Printf("[Warning] 封面文件删除失败 (不影响图书删除): path=%s, err=%v\n", existingBook.CoverPath, err)
+		// 	} else {
+		// 		fmt.Printf("[Info] 封面文件已删除: %s\n", existingBook.CoverPath)
+		// 	}
+		// }
+
+		return nil
+	})
+
 	if err != nil {
-		if errors.Is(err, services.ErrBookNotFound) {
+		if errors.Is(err, ErrBookNotFound) {
 			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 			return
 		}
+		if errors.Is(err, ErrDeleteBook) {
+			c.JSON(http.StatusInternalServerError, models.Response{
+				Code: 500,
+				Msg:  "删除图书失败",
+			})
+			return
+		}
+		if errors.Is(err, ErrDeleteCover) {
+			c.JSON(http.StatusInternalServerError, models.Response{
+				Code: 500,
+				Msg:  "封面删除失败",
+			})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统繁忙,请稍后再试",
 		})
 		return
-	}
-
-	if book.Stock != book.TotalStock {
-		c.JSON(http.StatusConflict, models.Response{
-			Code: 409,
-			Msg:  "图书仍在借阅中",
-		})
-		return
-	}
-
-	if err := h.bookService.DeleteBook(uint(bookID)); err != nil {
-		if errors.Is(err, services.ErrBookNotFound) {
-			c.JSON(http.StatusNotFound, models.Response{
-				Code: 404,
-				Msg:  "图书不存在",
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, models.Response{
-			Code: 500,
-			Msg:  "删除图书失败",
-		})
-		return
-	}
-
-	if book.CoverPath != models.DefaultCoverPath {
-		if err := utils.RemoveFile(book.CoverPath); err != nil {
-			log.Printf("封面删除失败: %v", err)
-		}
 	}
 
 	c.JSON(http.StatusOK, models.Response{
@@ -457,7 +601,7 @@ func (h *BookHandler) DeleteBooks(c *gin.Context) {
 // @Failure 409 {object} models.Response "库存不足"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/borrows [post]
-func (h *BorrowHandler) BorrowBook(c *gin.Context) {
+func BorrowBook(c *gin.Context) {
 	var req models.FindBookRequest
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -477,22 +621,56 @@ func (h *BorrowHandler) BorrowBook(c *gin.Context) {
 		return
 	}
 
-	borrowRecord, err := h.borrowService.BorrowBook(userID, req.ID)
+	var borrowRecord models.BorrowRecord
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var book models.Book
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, req.ID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrBookNotFound
+			}
+			return err
+		}
+
+		if book.Stock <= 0 {
+			return ErrNoStock
+		}
+
+		if err := tx.Model(&book).Update("stock", book.Stock-1).Error; err != nil {
+			return err
+		}
+
+		borrowRecord = models.BorrowRecord{
+			UserID:     userID,
+			BookID:     req.ID,
+			BorrowDate: time.Now(),
+			ReturnDate: nil,
+			Status:     "borrowed",
+		}
+
+		if err := tx.Omit("User", "Book").Create(&borrowRecord).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		if errors.Is(err, services.ErrBookNotFound) {
+		if errors.Is(err, ErrBookNotFound) {
 			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 			return
 		}
-		if errors.Is(err, services.ErrNoStock) {
+		if errors.Is(err, ErrNoStock) {
 			c.JSON(http.StatusConflict, models.Response{
 				Code: 409,
 				Msg:  "图书库存不足",
 			})
 			return
 		}
+
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统繁忙,请稍后再试",
@@ -519,7 +697,7 @@ func (h *BorrowHandler) BorrowBook(c *gin.Context) {
 // @Failure 404 {object} models.Response "记录不存在"
 // @Failure 500 {object} models.Response "服务器错误"
 // @Router /api/borrows/return [post]
-func (h *BorrowHandler) ReturnBook(c *gin.Context) {
+func ReturnBook(c *gin.Context) {
 	var req models.FindBookRequest
 
 	userID := c.GetUint("user_id")
@@ -540,22 +718,61 @@ func (h *BorrowHandler) ReturnBook(c *gin.Context) {
 		return
 	}
 
-	borrowRecord, err := h.borrowService.ReturnBook(userID, req.ID)
+	var borrowRecord models.BorrowRecord
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND book_id = ? AND status = ?", userID, req.ID, "borrowed").
+			First(&borrowRecord).Error; err != nil {
+			return ErrRecordNotFound
+		}
+
+		var book models.Book
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, req.ID).Error; err != nil {
+			if errors.Is(err, ErrBookNotFound) {
+				return ErrBookNotFound
+			}
+			return err
+		}
+
+		if err := tx.Model(&book).Update("stock", book.Stock+1).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("user_id = ? AND book_id = ? AND status = ?", userID, req.ID, "borrowed").First(&borrowRecord).Error; err != nil {
+			return ErrRecordNotFound
+		}
+
+		now := time.Now()
+		borrowRecord.ReturnDate = &now
+		borrowRecord.Status = "returned"
+
+		if err := tx.Model(&borrowRecord).Updates(models.BorrowRecord{
+			ReturnDate: &now,
+			Status:     "returned",
+		}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		if errors.Is(err, services.ErrBookNotFound) {
+		if errors.Is(err, ErrBookNotFound) {
 			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "图书不存在",
 			})
 			return
 		}
-		if errors.Is(err, services.ErrRecordNotFound) {
+
+		if errors.Is(err, ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, models.Response{
 				Code: 404,
 				Msg:  "未找到该书的借阅记录或已归还",
 			})
 			return
 		}
+
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "系统错误",
@@ -581,13 +798,13 @@ func (h *BorrowHandler) ReturnBook(c *gin.Context) {
 // @Failure 404 {object} models.Response "查询成功,无借书记录"
 // @Failure 500 {object} models.Response "用户ID解析错误或数据库查询失败"
 // @Router /api/records/{id} [post]
-func (h *BorrowHandler) BorrowRecords(c *gin.Context) {
+func BorrowRecords(c *gin.Context) {
 	id := c.Param("id")
 	userID, err := strconv.ParseUint(id, 10, 32)
 
 	session := sessions.Default(c)
-	userIDSession := session.Get("user_id")
-	if userIDSession == nil || uint(userID) != userIDSession.(uint) {
+	userID_session := session.Get("user_id")
+	if userID_session == nil || uint(userID) != userID_session.(uint) {
 		c.JSON(http.StatusBadRequest, models.Response{
 			Code: 400,
 			Msg:  "仅可查询自己的借书记录",
@@ -603,8 +820,12 @@ func (h *BorrowHandler) BorrowRecords(c *gin.Context) {
 		return
 	}
 
-	records, err := h.borrowService.GetUserRecords(uint(userID))
-	if err != nil {
+	var records []models.BorrowRecord
+	query := config.DB.Model(&models.BorrowRecord{})
+
+	query = config.DB.Where("user_id = ?", userID)
+
+	if err := query.Order("id DESC").Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",
@@ -636,9 +857,10 @@ func (h *BorrowHandler) BorrowRecords(c *gin.Context) {
 // @Failure 404 {object} models.Response "查询成功,无借书记录"
 // @Failure 500 {object} models.Response "数据库查询失败"
 // @Router /api/admin/records [get]
-func (h *BorrowHandler) GetAllBorrowRecords(c *gin.Context) {
-	records, err := h.borrowService.GetAllRecords()
-	if err != nil {
+func GetAllBorrowRecords(c *gin.Context) {
+	var records []models.BorrowRecord
+	query := config.DB.Model(&models.BorrowRecord{})
+	if err := query.Order("id DESC").Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",
@@ -671,7 +893,7 @@ func (h *BorrowHandler) GetAllBorrowRecords(c *gin.Context) {
 // @Failure 404 {object} models.Response "查询成功,无借书记录"
 // @Failure 500 {object} models.Response "用户ID解析错误或数据库查询失败"
 // @Router /api/admin/records/{id} [post]
-func (h *BorrowHandler) BorrowRecordsByID(c *gin.Context) {
+func BorrowRecordsByID(c *gin.Context) {
 	id := c.Param("id")
 	userID, err := strconv.ParseUint(id, 10, 32)
 	if err != nil {
@@ -682,8 +904,12 @@ func (h *BorrowHandler) BorrowRecordsByID(c *gin.Context) {
 		return
 	}
 
-	records, err := h.borrowService.GetUserRecords(uint(userID))
-	if err != nil {
+	var records []models.BorrowRecord
+	query := config.DB.Model(&models.BorrowRecord{})
+
+	query = config.DB.Where("user_id = ?", userID)
+
+	if err := query.Order("id DESC").Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
 			Code: 500,
 			Msg:  "数据库查询失败",

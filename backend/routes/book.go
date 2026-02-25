@@ -6,35 +6,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterBookRouters(r *gin.Engine) {
+func RegisterBookRouters(r *gin.Engine, bookHandler *controller.BookHandler, borrowHandler *controller.BorrowHandler) {
 	api := r.Group("/api")
 
 	authGroup := api.Group("/")
 	authGroup.Use(middleware.AuthRequired())
 	{
-		authGroup.POST("/records/:id", controller.BorrowRecords)
+		authGroup.POST("/records/:id", borrowHandler.BorrowRecords)
 		borrows := authGroup.Group("/borrows")
 		{
 			// 创建借阅记录 (借书)
-			borrows.POST("", controller.BorrowBook)
-			borrows.POST("/return", controller.ReturnBook)
+			borrows.POST("", borrowHandler.BorrowBook)
+			borrows.POST("/return", borrowHandler.ReturnBook)
 		}
 
-		authGroup.GET("/books", controller.GetBooks)
+		authGroup.GET("/books", bookHandler.GetBooks)
 
 		adminGroup := authGroup.Group("/admin")
 		adminGroup.Use(middleware.AdminRequired())
 		{
 			// POST /books 创建
-			adminGroup.POST("/books", controller.CreateBook)
+			adminGroup.POST("/books", bookHandler.CreateBook)
 			// PUT /books/:id 更新
-			adminGroup.PUT("/books/:id", controller.UpdateBook)
+			adminGroup.PUT("/books/:id", bookHandler.UpdateBook)
 			// DELETE /books/:id 删除
-			adminGroup.DELETE("/books/:id", controller.DeleteBooks)
+			adminGroup.DELETE("/books/:id", bookHandler.DeleteBooks)
 
-			adminGroup.GET("/records", controller.GetAllBorrowRecords)
+			adminGroup.GET("/records", borrowHandler.GetAllBorrowRecords)
 
-			adminGroup.POST("/records/:id", controller.BorrowRecordsByID)
+			adminGroup.POST("/records/:id", borrowHandler.BorrowRecordsByID)
 		}
 	}
 }

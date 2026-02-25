@@ -6,20 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterUserRoutes(r *gin.Engine) {
+func RegisterUserRoutes(r *gin.Engine, userHandler *controller.UserHandler) {
 	api := r.Group("/api")
 	{
 
 		auth := api.Group("/auth")
 		{
-			auth.POST("/register", controller.Register)
-			auth.POST("/login", controller.Login)
+			auth.POST("/register", userHandler.Register)
+			auth.POST("/login", userHandler.Login)
 		}
 
 		authGroup := api.Group("/")
 		authGroup.Use(middleware.AuthRequired())
 		{
-			authGroup.POST("/logout", controller.Logout)
+			authGroup.POST("/logout", userHandler.Logout)
 		}
 	}
 }

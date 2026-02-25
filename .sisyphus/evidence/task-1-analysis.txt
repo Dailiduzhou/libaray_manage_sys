@@ -1,0 +1,131 @@
+BookRepository interface (backend/repositories/interfaces.go:10-19)
+- Methods (all accept `db *gorm.DB`):
+  - Create(db *gorm.DB, book *models.Book) error
+  - GetByID(db *gorm.DB, id uint) (*models.Book, error)
+  - Update(db *gorm.DB, book *models.Book) error
+  - Delete(db *gorm.DB, id uint) error
+  - FindAll(db *gorm.DB) ([]*models.Book, error)
+  - FindByTitle(db *gorm.DB, title string) ([]*models.Book, error)
+  - FindByAuthor(db *gorm.DB, author string) ([]*models.Book, error)
+- Characteristics:
+  - Interface is strictly CRUD + simple search, no transaction or locking semantics.
+  - Callers are responsible for constructing and passing a `*gorm.DB` (raw connection or transactional handle).
+  - No methods expose lock-aware variants (e.g., "for update" read) or stock-specific operations.
+
+GormBookRepository implementation (backend/repositories/book_repo.go:10-65)
+- Struct: `type GormBookRepository struct{}` (stateless, all behavior via injected `*gorm.DB`).
+- Method implementations:
+  - Create: `db.Create(book)`
+  - GetByID: `db.First(&book, id)` with `gorm.ErrRecordNotFound` handling, but no `clause.Locking` usage.
+  - Update: `db.Save(book)` (full-object save, no field-level constraints).
+  - Delete: `db.Delete(&models.Book{}, id)`.
+  - FindAll: `db.Find(&books)`.
+  - FindByTitle: `db.Where("title LIKE ?", "%"+title+"%").Find(&books)`.
+  - FindByAuthor: `db.Where("author LIKE ?", "%"+author+"%").Find(&books)`.
+- Characteristics:
+  - Pure GORM wrapper: no domain rules (stock rules, borrow constraints) embedded.
+  - No use of `clause.Locking` anywhere; all reads are non-locking.
+  - No explicit transaction boundaries; relies entirely on the `db` passed in.
+
+How services currently use `config.DB` and locking (services layer)
+- BookService (backend/services/book_service.go):
+  - CreateBook:
+    - Directly uses `config.DB` to check duplicates via `Where(...).First(&existingBook)`.
+    - Creates new book via `config.DB.Create(newBook)`.
+    - BookRepository is NOT used at all for create or duplicate-check logic.
+  - GetBooks:
+    - Builds query via `config.DB.Model(&models.Book{})` and filters by `title`, `author`, `summary`.
+    - Again, bypasses BookRepository; raw GORM usage.
+  - UpdateBook:
+    - Uses `config.DB.Transaction(func(tx *gorm.DB) error { ... })`.
+    - Inside transaction:
+      - Locks target row using `tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, id)`.
+      - Computes `updates` map including title/author/summary/cover_path and stock/total_stock with consistency check (`ErrStockInvalid`).
+      - Applies `tx.Model(&book).Updates(updates)`.
+    - After transaction, fetches updated book via `config.DB.First(&book, id)` (non-locking read).
+    - No BookRepository methods are used despite existing `GetByID` and `Update`.
+  - DeleteBook:
+    - Uses `config.DB.Transaction` with inline logic:
+      - `tx.First(&book, id)` (non-locking read) to load book.
+      - Validates `book.Stock == book.TotalStock` (else `ErrBookBorrowed`).
+      - Deletes via `tx.Delete(&book)`.
+    - No BookRepository involvement.
+  - GetBookByID:
+    - Direct `config.DB.First(&book, id)`; returns `ErrBookNotFound` for `gorm.ErrRecordNotFound`.
+    - Overlaps with `BookRepository.GetByID` but bypasses it.
+
+BorrowService (backend/services/borrow_service.go):
+- Struct: `borrowService` holds `borrowRepo *repositories.GormBorrowRepository` and `db *gorm.DB`.
+- BorrowBook:
+  - Uses `s.db.Transaction` to perform a locking borrow flow:
+    - `tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, bookID)` to lock book row.
+    - Validates `book.Stock > 0` else `ErrNoStock`.
+    - Decrements stock via `tx.Model(&book).Update("stock", book.Stock-1)`.
+    - Creates `BorrowRecord` with `tx.Omit("User", "Book").Create(borrowRecord)`.
+  - No involvement of BookRepository; direct GORM access on `models.Book`.
+- ReturnBook:
+  - Uses `s.db.Transaction` with multiple locks:
+    - Lock borrow record row via `tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(...).First(&borrowRecord)`.
+    - Lock book row via `tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, bookID)`.
+    - Increment stock via `tx.Model(&book).Update("stock", book.Stock+1)`.
+    - Re-fetch borrow record and update return info via `tx.Model(&borrowRecord).Updates(...)`.
+  - Again, BookRepository is not used; stock and locking logic live entirely in service.
+
+Controller layer use of `config.DB` and locking (backend/controllers/controller.go)
+- There are duplicated, handler-level flows that also bypass BookRepository and BookService:
+  - `CreateBook` (global function, not method): uses `config.DB` directly for duplicate checking and `config.DB.Create(&newBook)`.
+  - `GetBooks` (global function): uses `config.DB.Model(&models.Book{})` and filter conditions.
+  - `UpdateBook` (global function):
+    - Uses `config.DB.WithContext(...).Transaction` and `tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, req.ID)`.
+    - Handles stock and total_stock invariants plus cover_path updates with locking, mirroring BookService.UpdateBook.
+  - `DeleteBooks` (global function):
+    - Uses `config.DB.Transaction` to load book, validate `Stock == TotalStock`, delete book, and remove cover file.
+  - `BorrowBook` and `ReturnBook` (global functions):
+    - Each uses `config.DB.Transaction` and `clause.Locking{Strength: "UPDATE"}` for row-level book and borrow-record locking, duplicating BorrowService behavior.
+- BookHandler/BorrowHandler methods (service-based) vs global functions (direct DB) coexist, leading to mixed responsibility and repeated direct access to `config.DB`.
+
+Summary of current BookRepository / GormBookRepository role
+- The BookRepository abstraction exists but is underused:
+  - Only clearly wired in `backend/main.go:89` as `bookRepo := &repositories.GormBookRepository{}` for handler construction.
+  - GormBookRepository methods are standard CRUD/search wrappers with no awareness of:
+    - Row-level locking (`clause.Locking{Strength: "UPDATE"}`).
+    - Stock-specific invariants (e.g., `Stock <= TotalStock`, `Stock == TotalStock` for deletion).
+    - Borrow constraints (e.g., disallow delete when active borrows exist).
+- All lock-sensitive operations are implemented:
+  - In BookService (`UpdateBook`, `DeleteBook`).
+  - In BorrowService (`BorrowBook`, `ReturnBook`).
+  - In controller global functions that bypass services.
+- The repository currently does NOT centralize DB access; `config.DB` is used directly in multiple layers.
+
+Lock-aware operations required by higher-level flows (based on services/controllers)
+- Update flow (BookService.UpdateBook, controller.UpdateBook):
+  - Needs: load book by ID with `SELECT ... FOR UPDATE` semantics.
+  - Needs: atomic update of multiple fields plus stock/total_stock with invariant check.
+- Delete flow (BookService.DeleteBook, controller.DeleteBooks):
+  - Needs: load book by ID (ideally lock row to avoid racing borrows) and check `Stock == TotalStock` before delete.
+  - Needs: atomic delete of book record.
+- Borrow flow (BorrowService.BorrowBook, controller.BorrowBook):
+  - Needs: lock book row, validate `Stock > 0`, decrement stock, and create borrow record in the same transaction.
+- Return flow (BorrowService.ReturnBook, controller.ReturnBook):
+  - Needs: lock borrow record row and corresponding book row, increment stock, and update borrow record status in a single transaction.
+
+Identified gaps between BookRepository capabilities and lock-sensitive flows
+- No lock-aware read methods:
+  - Missing something like `GetByIDForUpdate(db *gorm.DB, id uint) (*models.Book, error)` or a general lock-aware loader for use inside transactions.
+- No domain-specific stock helpers:
+  - Missing `DecrementStock(db *gorm.DB, bookID uint, delta int)` and `IncrementStock(db *gorm.DB, bookID uint, delta int)` that operate under row locks and enforce bounds.
+  - Stock invariants (e.g., `Stock <= TotalStock`) are enforced in services, not in the repository.
+- No delete-with-check method:
+  - Missing a repository operation that encapsulates "delete book only when `Stock == TotalStock`" under a transaction and optional lock.
+- Repository signature still exposes `*gorm.DB`:
+  - All callers must know about GORM and transaction semantics, which conflicts with the goal of hiding `*gorm.DB` from the interface in later refactors.
+  - Because services already depend on `*gorm.DB` and `config.DB`, introducing lock-aware repository methods will require moving those usages behind the repository boundary.
+- Inconsistent locking strategy across layers:
+  - Some flows (UpdateBook, BorrowBook, ReturnBook, controller-level variants) use `clause.Locking{Strength: "UPDATE"}` directly on `config.DB`/`tx`.
+  - Repository never participates in locking, so lock semantics are duplicated and risk drift.
+
+Evidence alignment with `rg`/
+- `rg "BookRepository|GormBookRepository|clause.Locking|config.DB" backend -n` shows:
+  - `BookRepository` and `GormBookRepository` definitions and mocks only in `backend/repositories` and wiring in `backend/main.go` and controllers.
+  - All `clause.Locking` usages live in service and controller layers (book_service, borrow_service, controller global functions), not in repository implementations.
+  - `config.DB` usages are spread across services, controllers, and main, confirming that repository does not own DB access.

@@ -1,0 +1,1 @@
+- Backend build currently fails due to outdated constructor usage in repositories/repositories.go referring to GormBookRepository and NewGormBookRepository(). This file is out of scope for the current step.
