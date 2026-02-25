@@ -13,7 +13,8 @@ type gormBookRepository struct {
 	db *gorm.DB
 }
 
-func newGormBookRepository(db *gorm.DB) BookRepository {
+// NewGormBookRepository creates a new BookRepository using GORM.
+func NewGormBookRepository(db *gorm.DB) BookRepository {
 	return &gormBookRepository{db: db}
 }
 
@@ -27,7 +28,7 @@ func (r *gormBookRepository) GetBookByID(id uint) (*models.Book, error) {
 	var book models.Book
 	if err := r.db.First(&book, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func (r *gormBookRepository) LockBookForUpdate(id uint) (*models.Book, error) {
 	var book models.Book
 	if err := r.db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}

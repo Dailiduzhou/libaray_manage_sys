@@ -33,7 +33,7 @@ type Book struct {
 
 	InitialStock int `json:"initial_stock" gorm:"default:0" binding:"gte=0"`
 	Stock        int `json:"stock" gorm:"default:0" binding:"gte=0"`
-	TotalStock   int `json:"total_stock" gorm:"defualt:0" binding:"gte=0"`
+	TotalStock   int `json:"total_stock" gorm:"default:0" binding:"gte=0"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -6,7 +6,6 @@ import (
 	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
 	"github.com/Dailiduzhou/library_manage_sys/utils"
-	"gorm.io/gorm"
 )
 
 // Custom errors for UserService
@@ -18,12 +17,11 @@ var (
 // userService implements UserService interface
 type userService struct {
 	repo repositories.UserRepository
-	db   *gorm.DB
 }
 
 // Register creates a new user account
 func (s *userService) Register(username, password string) (*models.User, error) {
-	existingUser, err := s.repo.GetByUsername(s.db, username)
+	existingUser, err := s.repo.GetByUsername(username)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +42,7 @@ func (s *userService) Register(username, password string) (*models.User, error) 
 		Role:     "user",
 	}
 
-	if err := s.repo.Create(s.db, newUser); err != nil {
+	if err := s.repo.Create(newUser); err != nil {
 		return nil, err
 	}
 
@@ -53,7 +51,7 @@ func (s *userService) Register(username, password string) (*models.User, error) 
 
 // Login authenticates a user with username and password
 func (s *userService) Login(username, password string) (*models.User, error) {
-	user, err := s.repo.GetByUsername(s.db, username)
+	user, err := s.repo.GetByUsername(username)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +70,7 @@ func (s *userService) Login(username, password string) (*models.User, error) {
 
 // GetUserByUsername retrieves a user by username
 func (s *userService) GetUserByUsername(username string) (*models.User, error) {
-	user, err := s.repo.GetByUsername(s.db, username)
+	user, err := s.repo.GetByUsername(username)
 	if err != nil {
 		return nil, err
 	}

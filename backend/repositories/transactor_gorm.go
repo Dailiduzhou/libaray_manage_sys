@@ -65,8 +65,8 @@ func (t *gormTransactor) WithinTransaction(ctx context.Context, fn func(ctx cont
 	// Check for existing transaction in context to support nested semantics.
 	if existingTx, ok := ctx.Value(txKey).(*gorm.DB); ok && existingTx != nil {
 		repos := &gormTxRepositories{
-			books:   newGormBookRepository(existingTx),
-			borrows: newGormBorrowRepository(existingTx),
+			books:   NewGormBookRepository(existingTx),
+			borrows: NewGormBorrowRepository(existingTx),
 		}
 		return fn(ctx, repos)
 	}
@@ -75,8 +75,8 @@ func (t *gormTransactor) WithinTransaction(ctx context.Context, fn func(ctx cont
 	return t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txCtx := context.WithValue(ctx, txKey, tx)
 		repos := &gormTxRepositories{
-			books:   newGormBookRepository(tx),
-			borrows: newGormBorrowRepository(tx),
+			books:   NewGormBookRepository(tx),
+			borrows: NewGormBorrowRepository(tx),
 		}
 		return fn(txCtx, repos)
 	})

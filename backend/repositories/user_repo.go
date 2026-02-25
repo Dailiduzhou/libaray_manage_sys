@@ -7,20 +7,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// GormUserRepository implements UserRepository using GORM
-type GormUserRepository struct{}
-
-
-
-// Create creates a new user in the database
-func (r *GormUserRepository) Create(db *gorm.DB, user *models.User) error {
-	return db.Create(user).Error
+// gormUserRepository implements UserRepository using GORM.
+type gormUserRepository struct {
+	db *gorm.DB
 }
 
-// GetByID retrieves a user by ID
-func (r *GormUserRepository) GetByID(db *gorm.DB, id uint) (*models.User, error) {
+// NewGormUserRepository creates a new UserRepository using GORM.
+func NewGormUserRepository(db *gorm.DB) UserRepository {
+	return &gormUserRepository{db: db}
+}
+
+// Create creates a new user in the database.
+func (r *gormUserRepository) Create(user *models.User) error {
+	return r.db.Create(user).Error
+}
+
+// GetByID retrieves a user by ID.
+func (r *gormUserRepository) GetByID(id uint) (*models.User, error) {
 	var user models.User
-	err := db.First(&user, id).Error
+	err := r.db.First(&user, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -30,10 +35,10 @@ func (r *GormUserRepository) GetByID(db *gorm.DB, id uint) (*models.User, error)
 	return &user, nil
 }
 
-// GetByUsername retrieves a user by username
-func (r *GormUserRepository) GetByUsername(db *gorm.DB, username string) (*models.User, error) {
+// GetByUsername retrieves a user by username.
+func (r *gormUserRepository) GetByUsername(username string) (*models.User, error) {
 	var user models.User
-	err := db.Where("username = ?", username).First(&user).Error
+	err := r.db.Where("username = ?", username).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -43,11 +48,10 @@ func (r *GormUserRepository) GetByUsername(db *gorm.DB, username string) (*model
 	return &user, nil
 }
 
-// FindAll retrieves all users
-func (r *GormUserRepository) FindAll(db *gorm.DB) ([]*models.User, error) {
+// FindAll retrieves all users.
+func (r *gormUserRepository) FindAll() ([]*models.User, error) {
 	var users []*models.User
-	err := db.Find(&users).Error
-	if err != nil {
+	if err := r.db.Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return users, nil

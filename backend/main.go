@@ -87,14 +87,13 @@ func main() {
 
 	// Create repositories
 	bookRepo := repositories.NewGormBookRepository(config.DB)
-	userRepo := repositories.NewGormUserRepository()
+	userRepo := repositories.NewGormUserRepository(config.DB)
 	borrowRepo := repositories.NewGormBorrowRepository(config.DB)
 	transactor := repositories.NewGormTransactor(config.DB)
-	_ = userRepo // userRepo is reserved for future use
 
 	// Create services
 	bookService := services.NewBookService(bookRepo)
-	userService := services.NewUserService(config.DB, userRepo)
+	userService := services.NewUserService(userRepo)
 	borrowService := services.NewBorrowService(borrowRepo, bookRepo, transactor)
 
 	// Create handlers

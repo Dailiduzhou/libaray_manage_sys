@@ -13,7 +13,8 @@ type gormBorrowRepository struct {
 	db *gorm.DB
 }
 
-func newGormBorrowRepository(db *gorm.DB) BorrowRepository {
+// NewGormBorrowRepository creates a new BorrowRepository using GORM.
+func NewGormBorrowRepository(db *gorm.DB) BorrowRepository {
 	return &gormBorrowRepository{db: db}
 }
 
@@ -84,7 +85,7 @@ func (r *gormBorrowRepository) LockBorrowedRecordForUpdate(userID uint, bookID u
 		First(&record).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}

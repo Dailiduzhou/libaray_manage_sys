@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
-	"gorm.io/gorm"
 )
 
 type stubBookRepository struct {
@@ -141,7 +140,7 @@ func TestBookServiceGetBooksFilterAndSort(t *testing.T) {
 func TestBookServiceUpdateBookNotFound(t *testing.T) {
 	repo := &stubBookRepository{
 		getBookByIDFn: func(id uint) (*models.Book, error) {
-			return nil, gorm.ErrRecordNotFound
+			return nil, nil
 		},
 	}
 	svc := &bookService{

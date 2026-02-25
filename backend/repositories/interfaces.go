@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"github.com/Dailiduzhou/library_manage_sys/models"
-	"gorm.io/gorm"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mocks
@@ -56,10 +55,10 @@ type BookRepository interface {
 
 // UserRepository defines the interface for user data access
 type UserRepository interface {
-	Create(db *gorm.DB, user *models.User) error
-	GetByID(db *gorm.DB, id uint) (*models.User, error)
-	GetByUsername(db *gorm.DB, username string) (*models.User, error)
-	FindAll(db *gorm.DB) ([]*models.User, error)
+	Create(user *models.User) error
+	GetByID(id uint) (*models.User, error)
+	GetByUsername(username string) (*models.User, error)
+	FindAll() ([]*models.User, error)
 }
 
 //go:generate mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mocks

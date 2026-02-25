@@ -33,13 +33,13 @@ func ConnectDB() {
 	dbPort := getEnv("DB_PORT", "3306")
 	dbName := getEnv("DB_NAME", "books")
 
-	dsnRoot := fmt.Sprintf("%s:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=True&loc=Local",
+	dsnRoot := fmt.Sprintf("%s:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=true&loc=Local",
 		dbUser, dbPassword, dbHost, dbPort)
 
 	var err error
 
 	maxRetries := 30
-	for i := range maxRetries {
+	for i := 0; i < maxRetries; i++ {
 		DB, err = gorm.Open(mysql.Open(dsnRoot), &gorm.Config{})
 		if err == nil {
 			break
@@ -59,7 +59,7 @@ func ConnectDB() {
 	}
 	log.Printf("确保数据库 %s 已存在", dbName)
 
-	dsnFinal := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	dsnFinal := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		dbUser, dbPassword, dbHost, dbPort, dbName)
 
 	DB, err = gorm.Open(mysql.Open(dsnFinal), &gorm.Config{})

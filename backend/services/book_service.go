@@ -7,7 +7,6 @@ import (
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
-	"gorm.io/gorm"
 )
 
 // Custom errors for BookService
@@ -101,10 +100,10 @@ func (s *bookService) GetBooks(title, author, summary string) ([]models.Book, er
 func (s *bookService) UpdateBook(id uint, title, author, summary, coverPath string, stock, totalStock int) (*models.Book, error) {
 	book, err := s.repo.GetBookByID(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrBookNotFound
-		}
 		return nil, err
+	}
+	if book == nil {
+		return nil, ErrBookNotFound
 	}
 
 	if title != "" {
@@ -147,10 +146,10 @@ func (s *bookService) UpdateBook(id uint, title, author, summary, coverPath stri
 func (s *bookService) DeleteBook(id uint) error {
 	book, err := s.repo.GetBookByID(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrBookNotFound
-		}
 		return err
+	}
+	if book == nil {
+		return ErrBookNotFound
 	}
 
 	if book.Stock != book.TotalStock {
@@ -164,10 +163,10 @@ func (s *bookService) DeleteBook(id uint) error {
 func (s *bookService) GetBookByID(id uint) (*models.Book, error) {
 	book, err := s.repo.GetBookByID(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrBookNotFound
-		}
 		return nil, err
+	}
+	if book == nil {
+		return nil, ErrBookNotFound
 	}
 	return book, nil
 }

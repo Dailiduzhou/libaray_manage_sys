@@ -7,7 +7,6 @@ import (
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
-	"gorm.io/gorm"
 )
 
 // BorrowService-specific errors
@@ -39,10 +38,10 @@ func (s *borrowService) BorrowBook(userID, bookID uint) (*models.BorrowRecord, e
 
 		book, err := bookRepo.LockBookForUpdate(bookID)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrBookNotFound
-			}
 			return err
+		}
+		if book == nil {
+			return ErrBookNotFound
 		}
 
 		if book.Stock <= 0 {
@@ -92,19 +91,19 @@ func (s *borrowService) ReturnBook(userID, bookID uint) (*models.BorrowRecord, e
 
 		lockedRecord, err := borrowRepo.LockBorrowedRecordForUpdate(userID, bookID)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrRecordNotFound
-			}
 			return err
+		}
+		if lockedRecord == nil {
+			return ErrRecordNotFound
 		}
 		borrowRecord = *lockedRecord
 
 		book, err := bookRepo.LockBookForUpdate(bookID)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrBookNotFound
-			}
 			return err
+		}
+		if book == nil {
+			return ErrBookNotFound
 		}
 
 		book.Stock++

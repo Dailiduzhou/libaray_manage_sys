@@ -1,10 +1,6 @@
 package services
 
-import (
-	"gorm.io/gorm"
-
-	"github.com/Dailiduzhou/library_manage_sys/repositories"
-)
+import "github.com/Dailiduzhou/library_manage_sys/repositories"
 
 // This file re-exports all service constructors for convenient access.
 // Instead of importing individual service files, users can import this package
@@ -18,10 +14,9 @@ func NewBookService(bookRepo repositories.BookRepository) *bookService {
 }
 
 // NewUserService creates a new UserService instance
-func NewUserService(db *gorm.DB, userRepo repositories.UserRepository) UserService {
+func NewUserService(userRepo repositories.UserRepository) UserService {
 	return &userService{
 		repo: userRepo,
-		db:   db,
 	}
 }
 
