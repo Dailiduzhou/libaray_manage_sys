@@ -1,28 +1,95 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-
-  build:
+  tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.20'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
 
-    - name: Build
-      run: go build -v ./...
+      - name: Run unit and mock-based tests
+        working-directory: backend
+        run: go test -short -v ./...
 
-    - name: Test
-      run: go test -v ./...
+      - name: Run repository integration tests
+        working-directory: backend
+        run: go test -v ./repositories -run '^TestBookRepositoryIntegration_'
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare compose runtime files
+        run: |
+          mkdir -p backend/uploads nginx/ssl prometheus/rules
+
+          if [ ! -f .env ]; then
+          cat > .env <<'EOF'
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          REDIS_PASSWORD=
+          REDIS_DB=0
+
+          SESSION_SECRET=ci_session_secret_32_bytes_length_ok
+
+          DB_USER=root
+          DB_PASSWORD=123456
+          DB_HOST=db
+          DB_PORT=3306
+          DB_NAME=books
+
+          ADMIN_USERNAME=admin
+          ADMIN_PASSWORD=41c4083d759cb9f0bbf6945b51a7de14aea5f76bf2b8fbdab0d15e78eb0eeba8
+          EOF
+          fi
+
+          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
+            openssl req -x509 -newkey rsa:2048 -nodes \
+              -keyout nginx/ssl/key.pem \
+              -out nginx/ssl/cert.pem \
+              -days 1 \
+              -subj "/CN=localhost"
+          fi
+
+      - name: Start docker compose services
+        run: docker compose up -d --build
+
+      - name: Keep containers running for ~15s and verify status
+        run: |
+          sleep 15
+          docker compose ps
+
+          exited_services="$(docker compose ps --status exited --services)"
+          if [ -n "${exited_services}" ]; then
+            echo "The following services exited unexpectedly:"
+            echo "${exited_services}"
+            docker compose logs --no-color
+            exit 1
+          fi
+
+      - name: Dump compose logs
+        if: always()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Shutdown and cleanup compose resources
+        if: always()
+        run: docker compose down -v --remove-orphans

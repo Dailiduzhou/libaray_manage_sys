@@ -1,5 +1,5 @@
 # 阶段 1: 编译环境
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # 设置 Go 代理，加快国内下载速度
 ENV GOPROXY=https://goproxy.cn,direct
@@ -12,7 +12,7 @@ RUN go mod download
 # 复制源码并编译
 COPY . .
 # CGO_ENABLED=0 表示静态编译，不依赖系统动态库
-RUN CGO_ENABLED=0 GOOS=linux go build -o library_server main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o library_server .
 
 # 阶段 2: 运行环境
 FROM alpine:latest
