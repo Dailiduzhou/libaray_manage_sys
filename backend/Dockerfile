@@ -1,5 +1,5 @@
 # 阶段 1: 编译环境
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # 设置 Go 代理，加快国内下载速度
 ENV GOPROXY=https://goproxy.cn,direct
