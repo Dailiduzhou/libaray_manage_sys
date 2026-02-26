@@ -24,11 +24,8 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/config"
-	controller "github.com/Dailiduzhou/library_manage_sys/controllers"
 	"github.com/Dailiduzhou/library_manage_sys/middleware"
-	"github.com/Dailiduzhou/library_manage_sys/repositories"
 	"github.com/Dailiduzhou/library_manage_sys/routes"
-	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -85,25 +82,14 @@ func main() {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
-	// Create repositories
-	bookRepo := repositories.NewGormBookRepository(config.DB)
-	userRepo := repositories.NewGormUserRepository(config.DB)
-	borrowRepo := repositories.NewGormBorrowRepository(config.DB)
-	transactor := repositories.NewGormTransactor(config.DB)
-
-	// Create services
-	bookService := services.NewBookService(bookRepo)
-	userService := services.NewUserService(userRepo)
-	borrowService := services.NewBorrowService(borrowRepo, bookRepo, transactor)
-
-	// Create handlers
-	bookHandler := controller.NewBookHandler(bookService)
-	userHandler := controller.NewUserHandler(userService)
-	borrowHandler := controller.NewBorrowHandler(borrowService)
+	handlers, err := initializeHandlers(config.DB)
+	if err != nil {
+		log.Fatalf("依赖初始化失败: %v", err)
+	}
 
 	// Register routes
-	routes.RegisterUserRoutes(r, userHandler)
-	routes.RegisterBookRouters(r, bookHandler, borrowHandler)
+	routes.RegisterUserRoutes(r, handlers.user)
+	routes.RegisterBookRouters(r, handlers.book, handlers.borrow)
 
 	log.Println("服务器启动")
 	srv := &http.Server{

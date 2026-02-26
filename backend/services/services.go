@@ -7,7 +7,7 @@ import "github.com/Dailiduzhou/library_manage_sys/repositories"
 // and access all services from a single location.
 
 // NewBookService creates a new BookService instance
-func NewBookService(bookRepo repositories.BookRepository) *bookService {
+func NewBookService(bookRepo repositories.BookRepository) BookService {
 	return &bookService{
 		repo: bookRepo,
 	}
