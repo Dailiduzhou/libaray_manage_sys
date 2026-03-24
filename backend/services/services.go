@@ -1,6 +1,9 @@
 package services
 
-import "github.com/Dailiduzhou/library_manage_sys/repositories"
+import (
+	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
+	"github.com/Dailiduzhou/library_manage_sys/repositories"
+)
 
 // This file re-exports all service constructors for convenient access.
 // Instead of importing individual service files, users can import this package
@@ -25,10 +28,16 @@ func NewBorrowService(
 	borrowRepo repositories.BorrowRepository,
 	bookRepo repositories.BookRepository,
 	tx repositories.Transactor,
+	producer ports.Producer,
+	borrowedTopic string,
+	returnedTopic string,
 ) BorrowService {
 	return &borrowService{
-		borrowRepo: borrowRepo,
-		bookRepo:   bookRepo,
-		tx:         tx,
+		borrowRepo:    borrowRepo,
+		bookRepo:      bookRepo,
+		tx:            tx,
+		producer:      producer,
+		borrowedTopic: borrowedTopic,
+		returnedTopic: returnedTopic,
 	}
 }

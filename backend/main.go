@@ -20,11 +20,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/config"
+	"github.com/Dailiduzhou/library_manage_sys/internal/consumers"
 	"github.com/Dailiduzhou/library_manage_sys/middleware"
+	kafkainfra "github.com/Dailiduzhou/library_manage_sys/pkg/kafka"
 	"github.com/Dailiduzhou/library_manage_sys/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -38,6 +41,20 @@ import (
 func main() {
 	config.ConnectDB()
 	config.InitAdmin(config.DB)
+
+	kafkaConfig := config.LoadKafkaConfig()
+	saramaConfig, err := kafkainfra.NewConfig(kafkaConfig.Version)
+	if err != nil {
+		log.Fatalf("Kafka 配置错误: %v", err)
+	}
+	producer, err := kafkainfra.InitProducer(kafkaConfig.Brokers, saramaConfig)
+	if err != nil {
+		log.Fatalf("Kafka Producer 初始化失败: %v", err)
+	}
+	consumerGroup, err := kafkainfra.InitConsumerGroup(kafkaConfig.Brokers, kafkaConfig.GroupID, saramaConfig)
+	if err != nil {
+		log.Fatalf("Kafka ConsumerGroup 初始化失败: %v", err)
+	}
 
 	logger := middleware.InitLogger()
 	defer logger.Sync()
@@ -82,7 +99,7 @@ func main() {
 		c.JSON(200, gin.H{"message": "pong"})
 	})
 
-	handlers, err := initializeHandlers(config.DB)
+	handlers, err := initializeHandlers(config.DB, producer, kafkaConfig.BorrowedTopic, kafkaConfig.ReturnedTopic)
 	if err != nil {
 		log.Fatalf("依赖初始化失败: %v", err)
 	}
@@ -97,6 +114,23 @@ func main() {
 		Handler: r,
 	}
 
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	var consumerWG sync.WaitGroup
+	consumerWG.Add(1)
+	consumerHandler := consumers.NewBorrowEventHandler()
+	consumerTopics := []string{kafkaConfig.BorrowedTopic, kafkaConfig.ReturnedTopic}
+	go func() {
+		defer consumerWG.Done()
+		for {
+			if err := consumerGroup.Consume(consumerCtx, consumerTopics, consumerHandler); err != nil {
+				log.Printf("Kafka 消费失败: %v", err)
+			}
+			if consumerCtx.Err() != nil {
+				return
+			}
+		}
+	}()
+
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("服务器启动失败: %v\n", err)
@@ -109,12 +143,19 @@ func main() {
 	<-quit
 	log.Println("正在关闭服务器...")
 
+	consumerCancel()
+
 	// 设置 5 秒超时，处理未完成的请求
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal("服务器强制关闭:", err)
+	}
+
+	consumerWG.Wait()
+	if err := kafkainfra.Close(); err != nil {
+		log.Printf("Kafka 关闭失败: %v", err)
 	}
 
 	// 关闭数据库连接
