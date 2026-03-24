@@ -2,11 +2,11 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/Dailiduzhou/library_manage_sys/utils"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -44,34 +44,34 @@ func ConnectDB() {
 		if err == nil {
 			break
 		}
-		log.Printf("正在等待数据库启动 (%d/%d)... 错误: %v", i+1, maxRetries, err)
+		logger.Infof("正在等待数据库启动 (%d/%d)... 错误: %v", i+1, maxRetries, err)
 		time.Sleep(1 * time.Second)
 	}
 
 	if err != nil {
-		log.Fatal("最终连接数据库失败:", err)
+		logger.Fatal("最终连接数据库失败:", err)
 	}
 
 	createDbSQL := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4;", dbName)
 	err = DB.Exec(createDbSQL).Error
 	if err != nil {
-		log.Fatal("创建数据库失败:", err)
+		logger.Fatal("创建数据库失败:", err)
 	}
-	log.Printf("确保数据库 %s 已存在", dbName)
+	logger.Infof("确保数据库 %s 已存在", dbName)
 
 	dsnFinal := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		dbUser, dbPassword, dbHost, dbPort, dbName)
 
 	DB, err = gorm.Open(mysql.Open(dsnFinal), &gorm.Config{})
 	if err != nil {
-		log.Fatal("连接到具体数据库失败:", err)
+		logger.Fatal("连接到具体数据库失败:", err)
 	}
 
-	log.Println("数据库连接成功!")
+	logger.Info("数据库连接成功!")
 
 	err = DB.AutoMigrate(&models.Book{}, &models.User{}, &models.BorrowRecord{})
 	if err != nil {
-		log.Fatal("数据迁移失败", err)
+		logger.Fatal("数据迁移失败", err)
 	}
 }
 
@@ -90,13 +90,13 @@ func InitAdmin(db *gorm.DB) {
 	db.Model(&models.User{}).Where("username = ?", adminUser).Count(&count)
 
 	if count > 0 {
-		log.Println("管理员账号已存在，跳过初始化。")
+		logger.Info("管理员账号已存在，跳过初始化。")
 		return
 	}
 
 	hashedPassword, err := utils.HashPassword(adminPass)
 	if err != nil {
-		log.Fatal("管理员密码加密失败:", err)
+		logger.Fatal("管理员密码加密失败:", err)
 	}
 
 	admin := models.User{
@@ -106,8 +106,8 @@ func InitAdmin(db *gorm.DB) {
 	}
 
 	if err := db.Create(&admin).Error; err != nil {
-		log.Fatal("创建管理员失败:", err)
+		logger.Fatal("创建管理员失败:", err)
 	}
 
-	log.Printf("成功创建默认管理员: %s / %s", adminUser, adminPass)
+	logger.Infof("成功创建默认管理员: %s / %s", adminUser, adminPass)
 }

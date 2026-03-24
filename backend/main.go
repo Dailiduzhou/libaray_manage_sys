@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +27,7 @@ import (
 	"github.com/Dailiduzhou/library_manage_sys/internal/consumers"
 	"github.com/Dailiduzhou/library_manage_sys/middleware"
 	kafkainfra "github.com/Dailiduzhou/library_manage_sys/pkg/kafka"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/Dailiduzhou/library_manage_sys/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -39,25 +39,25 @@ import (
 )
 
 func main() {
+	appLogger := logger.Init()
+	defer appLogger.Sync()
+
 	config.ConnectDB()
 	config.InitAdmin(config.DB)
 
 	kafkaConfig := config.LoadKafkaConfig()
 	saramaConfig, err := kafkainfra.NewConfig(kafkaConfig.Version)
 	if err != nil {
-		log.Fatalf("Kafka 配置错误: %v", err)
+		logger.Fatalf("Kafka 配置错误: %v", err)
 	}
 	producer, err := kafkainfra.InitProducer(kafkaConfig.Brokers, saramaConfig)
 	if err != nil {
-		log.Fatalf("Kafka Producer 初始化失败: %v", err)
+		logger.Fatalf("Kafka Producer 初始化失败: %v", err)
 	}
 	consumerGroup, err := kafkainfra.InitConsumerGroup(kafkaConfig.Brokers, kafkaConfig.GroupID, saramaConfig)
 	if err != nil {
-		log.Fatalf("Kafka ConsumerGroup 初始化失败: %v", err)
+		logger.Fatalf("Kafka ConsumerGroup 初始化失败: %v", err)
 	}
-
-	logger := middleware.InitLogger()
-	defer logger.Sync()
 
 	r := gin.Default()
 
@@ -82,14 +82,13 @@ func main() {
 	}
 
 	r.Use(cors.New(corsConfig))
-	r.Use(middleware.GinLoggerAndMetrics(logger))
+	r.Use(middleware.GinLoggerAndMetrics(appLogger))
 	r.Static("/uploads", "./uploads")
 
-	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
 	if err := middleware.InitSession(r); err != nil {
-		log.Printf("会话创建失败: %q", err)
+		logger.Infof("会话创建失败: %q", err)
 	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -101,14 +100,14 @@ func main() {
 
 	handlers, err := initializeHandlers(config.DB, producer, kafkaConfig.BorrowedTopic, kafkaConfig.ReturnedTopic)
 	if err != nil {
-		log.Fatalf("依赖初始化失败: %v", err)
+		logger.Fatalf("依赖初始化失败: %v", err)
 	}
 
 	// Register routes
 	routes.RegisterUserRoutes(r, handlers.user)
 	routes.RegisterBookRouters(r, handlers.book, handlers.borrow)
 
-	log.Println("服务器启动")
+	logger.Info("服务器启动")
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: r,
@@ -123,7 +122,7 @@ func main() {
 		defer consumerWG.Done()
 		for {
 			if err := consumerGroup.Consume(consumerCtx, consumerTopics, consumerHandler); err != nil {
-				log.Printf("Kafka 消费失败: %v", err)
+				logger.Infof("Kafka 消费失败: %v", err)
 			}
 			if consumerCtx.Err() != nil {
 				return
@@ -133,7 +132,7 @@ func main() {
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("服务器启动失败: %v\n", err)
+			logger.Fatalf("服务器启动失败: %v\n", err)
 		}
 	}()
 
@@ -141,7 +140,7 @@ func main() {
 
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("正在关闭服务器...")
+	logger.Info("正在关闭服务器...")
 
 	consumerCancel()
 
@@ -150,12 +149,12 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("服务器强制关闭:", err)
+		logger.Fatal("服务器强制关闭:", err)
 	}
 
 	consumerWG.Wait()
 	if err := kafkainfra.Close(); err != nil {
-		log.Printf("Kafka 关闭失败: %v", err)
+		logger.Infof("Kafka 关闭失败: %v", err)
 	}
 
 	// 关闭数据库连接
@@ -164,5 +163,5 @@ func main() {
 		sqlDB.Close()
 	}
 
-	log.Println("服务器已优雅退出")
+	logger.Info("服务器已优雅退出")
 }

@@ -1,10 +1,10 @@
 package middleware
 
 import (
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"go.uber.org/zap"
 )
 
 func InitLogger() *zap.Logger {
-	logger, _ := zap.NewProduction()
-	return logger
+	return logger.L()
 }

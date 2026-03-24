@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"strconv"
 	"time"
 
 	"github.com/Dailiduzhou/library_manage_sys/internal/events"
 	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
 	"github.com/Dailiduzhou/library_manage_sys/models"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
 )
 
@@ -202,12 +202,12 @@ func (s *borrowService) publishBorrowEvent(evt events.BorrowEvent, topic string)
 
 	payload, err := json.Marshal(evt)
 	if err != nil {
-		log.Printf("kafka: failed to marshal borrow event: %v", err)
+		logger.Infof("kafka: failed to marshal borrow event: %v", err)
 		return
 	}
 
 	key := strconv.FormatUint(uint64(evt.UserID), 10)
 	if err := s.producer.SendMessage(topic, key, payload); err != nil {
-		log.Printf("kafka: failed to send borrow event: %v", err)
+		logger.Infof("kafka: failed to send borrow event: %v", err)
 	}
 }
