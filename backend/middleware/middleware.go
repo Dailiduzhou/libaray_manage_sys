@@ -2,11 +2,11 @@ package middleware
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-contrib/sessions/redis"
@@ -31,7 +31,7 @@ func InitSession(r *gin.Engine) error {
 
 	store, err = initRedisStore(sessionSecret)
 	if err != nil {
-		log.Printf("Redis 存储初始化失败，回退到 Cookie 存储: %v", err)
+		logger.Infof("Redis 存储初始化失败，回退到 Cookie 存储: %v", err)
 		store = initCookieStore(sessionSecret)
 	}
 
@@ -45,7 +45,7 @@ func InitSession(r *gin.Engine) error {
 
 	r.Use(sessions.Sessions("mysession", store))
 
-	log.Println("Session 中间件初始化完成")
+	logger.Info("Session 中间件初始化完成")
 	return nil
 }
 
@@ -77,12 +77,12 @@ func initRedisStore(sessionSecret []byte) (sessions.Store, error) {
 		return nil, fmt.Errorf("连接 Redis 失败: %w", err)
 	}
 
-	log.Println("Redis 存储初始化成功")
+	logger.Info("Redis 存储初始化成功")
 	return store, nil
 }
 
 func initCookieStore(sessionSecret []byte) sessions.Store {
-	log.Println("使用 Cookie 存储（开发环境）")
+	logger.Info("使用 Cookie 存储（开发环境）")
 	store := cookie.NewStore(sessionSecret)
 	return store
 }

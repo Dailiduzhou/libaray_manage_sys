@@ -2,11 +2,11 @@ package controller
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/Dailiduzhou/library_manage_sys/models"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/Dailiduzhou/library_manage_sys/utils"
 	"github.com/gin-contrib/sessions"
@@ -206,7 +206,7 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 
 	finalCoverPath := models.DefaultCoverPath
 	if req.Cover != nil && req.Cover.Size > 0 {
-		log.Printf("有封面文件上传，大小: %d", req.Cover.Size)
+		logger.Infof("有封面文件上传，大小: %d", req.Cover.Size)
 		savePath, err := utils.SaveImages(c, req.Cover)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.Response{
@@ -217,7 +217,7 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 		}
 		finalCoverPath = savePath
 	} else {
-		log.Printf("没有封面文件上传或文件为空，使用默认路径: %s", finalCoverPath)
+		logger.Infof("没有封面文件上传或文件为空，使用默认路径: %s", finalCoverPath)
 	}
 
 	finalSummary := req.Summary
@@ -229,7 +229,7 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 	if err != nil {
 		if req.Cover != nil && req.Cover.Size != 0 {
 			if removeErr := utils.RemoveFile(finalCoverPath); removeErr != nil {
-				log.Printf("封面删除失败: %v", removeErr)
+				logger.Infof("封面删除失败: %v", removeErr)
 			}
 		}
 
@@ -328,7 +328,7 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 
 	var finalCoverPath string
 	if req.Cover != nil && req.Cover.Size > 0 {
-		log.Printf("有封面文件上传，大小: %d", req.Cover.Size)
+		logger.Infof("有封面文件上传，大小: %d", req.Cover.Size)
 		savePath, err := utils.SaveImages(c, req.Cover)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.Response{
@@ -434,7 +434,7 @@ func (h *BookHandler) DeleteBooks(c *gin.Context) {
 
 	if book.CoverPath != models.DefaultCoverPath {
 		if err := utils.RemoveFile(book.CoverPath); err != nil {
-			log.Printf("封面删除失败: %v", err)
+			logger.Infof("封面删除失败: %v", err)
 		}
 	}
 
@@ -461,7 +461,7 @@ func (h *BorrowHandler) BorrowBook(c *gin.Context) {
 	var req models.FindBookRequest
 	userID := c.GetUint("user_id")
 	if userID == 0 {
-		log.Println("严重错误: 上下文中没有获取到 user_id")
+		logger.Info("严重错误: 上下文中没有获取到 user_id")
 		c.JSON(http.StatusUnauthorized, models.Response{
 			Code: 401,
 			Msg:  "用户未登录或认证失效",
@@ -524,7 +524,7 @@ func (h *BorrowHandler) ReturnBook(c *gin.Context) {
 
 	userID := c.GetUint("user_id")
 	if userID == 0 {
-		log.Println("严重错误: 上下文中没有获取到 user_id")
+		logger.Info("严重错误: 上下文中没有获取到 user_id")
 		c.JSON(http.StatusUnauthorized, models.Response{
 			Code: 401,
 			Msg:  "用户未登录或认证失效",

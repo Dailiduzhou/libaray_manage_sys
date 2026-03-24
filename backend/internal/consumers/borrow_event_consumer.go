@@ -2,9 +2,9 @@ package consumers
 
 import (
 	"encoding/json"
-	"log"
 
 	"github.com/Dailiduzhou/library_manage_sys/internal/events"
+	"github.com/Dailiduzhou/library_manage_sys/pkg/logger"
 	"github.com/IBM/sarama"
 )
 
@@ -22,12 +22,12 @@ func (h *BorrowEventHandler) ConsumeClaim(session sarama.ConsumerGroupSession, c
 	for msg := range claim.Messages() {
 		var evt events.BorrowEvent
 		if err := json.Unmarshal(msg.Value, &evt); err != nil {
-			log.Printf("kafka: failed to unmarshal borrow event: %v (topic=%s partition=%d offset=%d)", err, msg.Topic, msg.Partition, msg.Offset)
+			logger.Infof("kafka: failed to unmarshal borrow event: %v (topic=%s partition=%d offset=%d)", err, msg.Topic, msg.Partition, msg.Offset)
 			session.MarkMessage(msg, "")
 			continue
 		}
 
-		log.Printf("kafka: borrow event consumed: topic=%s partition=%d offset=%d event=%+v", msg.Topic, msg.Partition, msg.Offset, evt)
+		logger.Infof("kafka: borrow event consumed: topic=%s partition=%d offset=%d event=%+v", msg.Topic, msg.Partition, msg.Offset, evt)
 		session.MarkMessage(msg, "")
 	}
 	return nil
