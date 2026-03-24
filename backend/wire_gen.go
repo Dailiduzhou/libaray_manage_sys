@@ -8,6 +8,7 @@ package main
 
 import (
 	"github.com/Dailiduzhou/library_manage_sys/controllers"
+	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
 	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/google/wire"
@@ -20,7 +21,7 @@ import (
 
 // Injectors from wire.go:
 
-func initializeHandlers(db *gorm.DB) (*appHandlers, error) {
+func initializeHandlers(db *gorm.DB, producer ports.Producer, borrowedTopic string, returnedTopic string) (*appHandlers, error) {
 	bookRepository := repositories.NewGormBookRepository(db)
 	bookService := services.NewBookService(bookRepository)
 	bookHandler := controller.NewBookHandler(bookService)
@@ -29,7 +30,7 @@ func initializeHandlers(db *gorm.DB) (*appHandlers, error) {
 	userHandler := controller.NewUserHandler(userService)
 	borrowRepository := repositories.NewGormBorrowRepository(db)
 	transactor := repositories.NewGormTransactor(db)
-	borrowService := services.NewBorrowService(borrowRepository, bookRepository, transactor)
+	borrowService := services.NewBorrowService(borrowRepository, bookRepository, transactor, producer, borrowedTopic, returnedTopic)
 	borrowHandler := controller.NewBorrowHandler(borrowService)
 	mainAppHandlers := &appHandlers{
 		book:   bookHandler,

@@ -2,9 +2,14 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
+	"strconv"
 	"time"
 
+	"github.com/Dailiduzhou/library_manage_sys/internal/events"
+	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
 	"github.com/Dailiduzhou/library_manage_sys/models"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
 )
@@ -20,6 +25,10 @@ type borrowService struct {
 	borrowRepo repositories.BorrowRepository
 	bookRepo   repositories.BookRepository
 	tx         repositories.Transactor
+	producer   ports.Producer
+
+	borrowedTopic string
+	returnedTopic string
 }
 
 // BorrowBook allows a user to borrow a book
@@ -71,6 +80,14 @@ func (s *borrowService) BorrowBook(userID, bookID uint) (*models.BorrowRecord, e
 	if err != nil {
 		return nil, err
 	}
+
+	s.publishBorrowEvent(events.BorrowEvent{
+		EventType:  events.BorrowedEventType,
+		BorrowID:   borrowRecord.ID,
+		UserID:     borrowRecord.UserID,
+		BookID:     borrowRecord.BookID,
+		OccurredAt: borrowRecord.BorrowDate,
+	}, s.borrowedTopic)
 
 	return borrowRecord, nil
 }
@@ -126,6 +143,18 @@ func (s *borrowService) ReturnBook(userID, bookID uint) (*models.BorrowRecord, e
 		return nil, err
 	}
 
+	occurredAt := time.Now()
+	if borrowRecord.ReturnDate != nil {
+		occurredAt = *borrowRecord.ReturnDate
+	}
+	s.publishBorrowEvent(events.BorrowEvent{
+		EventType:  events.ReturnedEventType,
+		BorrowID:   borrowRecord.ID,
+		UserID:     borrowRecord.UserID,
+		BookID:     borrowRecord.BookID,
+		OccurredAt: occurredAt,
+	}, s.returnedTopic)
+
 	return &borrowRecord, nil
 }
 
@@ -164,4 +193,21 @@ func (s *borrowService) GetAllRecords() ([]models.BorrowRecord, error) {
 // GetRecordsByUserID retrieves all borrow records for a specific user (same as GetUserRecords)
 func (s *borrowService) GetRecordsByUserID(userID uint) ([]models.BorrowRecord, error) {
 	return s.GetUserRecords(userID)
+}
+
+func (s *borrowService) publishBorrowEvent(evt events.BorrowEvent, topic string) {
+	if s.producer == nil || topic == "" {
+		return
+	}
+
+	payload, err := json.Marshal(evt)
+	if err != nil {
+		log.Printf("kafka: failed to marshal borrow event: %v", err)
+		return
+	}
+
+	key := strconv.FormatUint(uint64(evt.UserID), 10)
+	if err := s.producer.SendMessage(topic, key, payload); err != nil {
+		log.Printf("kafka: failed to send borrow event: %v", err)
+	}
 }

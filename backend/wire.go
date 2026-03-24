@@ -5,6 +5,7 @@ package main
 
 import (
 	controller "github.com/Dailiduzhou/library_manage_sys/controllers"
+	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
 	"github.com/Dailiduzhou/library_manage_sys/repositories"
 	"github.com/Dailiduzhou/library_manage_sys/services"
 	"github.com/google/wire"
@@ -30,7 +31,7 @@ var handlerSet = wire.NewSet(
 	controller.NewBorrowHandler,
 )
 
-func initializeHandlers(db *gorm.DB) (*appHandlers, error) {
+func initializeHandlers(db *gorm.DB, producer ports.Producer, borrowedTopic string, returnedTopic string) (*appHandlers, error) {
 	wire.Build(
 		repositorySet,
 		serviceSet,
