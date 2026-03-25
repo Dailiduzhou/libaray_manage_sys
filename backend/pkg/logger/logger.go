@@ -53,42 +53,42 @@ func newLogger() *zap.Logger {
 	return logger
 }
 
-func Debug(args ...interface{}) {
+func Debug(args ...any) {
 	S().Debug(args...)
 }
 
-func Info(args ...interface{}) {
+func Info(args ...any) {
 	S().Info(args...)
 }
 
-func Warn(args ...interface{}) {
+func Warn(args ...any) {
 	S().Warn(args...)
 }
 
-func Error(args ...interface{}) {
+func Error(args ...any) {
 	S().Error(args...)
 }
 
-func Fatal(args ...interface{}) {
+func Fatal(args ...any) {
 	S().Fatal(args...)
 }
 
-func Debugf(format string, args ...interface{}) {
+func Debugf(format string, args ...any) {
 	S().Debugf(format, args...)
 }
 
-func Infof(format string, args ...interface{}) {
+func Infof(format string, args ...any) {
 	S().Infof(format, args...)
 }
 
-func Warnf(format string, args ...interface{}) {
+func Warnf(format string, args ...any) {
 	S().Warnf(format, args...)
 }
 
-func Errorf(format string, args ...interface{}) {
+func Errorf(format string, args ...any) {
 	S().Errorf(format, args...)
 }
 
-func Fatalf(format string, args ...interface{}) {
+func Fatalf(format string, args ...any) {
 	S().Fatalf(format, args...)
 }
