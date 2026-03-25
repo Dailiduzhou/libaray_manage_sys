@@ -1,0 +1,17 @@
+{
+  local_certs
+}
+
+localhost {
+  tls /etc/caddy/ssl/cert.pem /etc/caddy/ssl/key.pem
+
+  root * /var/www
+
+  handle /uploads/* {
+    file_server browse
+  }
+
+  handle {
+    reverse_proxy library_app:8080
+  }
+}

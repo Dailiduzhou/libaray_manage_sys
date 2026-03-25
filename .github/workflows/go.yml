@@ -40,7 +40,7 @@ jobs:
 
       - name: Prepare compose runtime files
         run: |
-          mkdir -p backend/uploads nginx/ssl prometheus/rules
+          mkdir -p backend/uploads caddy/ssl prometheus/rules
 
           if [ ! -f .env ]; then
           cat > .env <<'EOF'
@@ -62,10 +62,10 @@ jobs:
           EOF
           fi
 
-          if [ ! -f nginx/ssl/cert.pem ] || [ ! -f nginx/ssl/key.pem ]; then
+          if [ ! -f caddy/ssl/cert.pem ] || [ ! -f caddy/ssl/key.pem ]; then
             openssl req -x509 -newkey rsa:2048 -nodes \
-              -keyout nginx/ssl/key.pem \
-              -out nginx/ssl/cert.pem \
+              -keyout caddy/ssl/key.pem \
+              -out caddy/ssl/cert.pem \
               -days 1 \
               -subj "/CN=localhost"
           fi

@@ -1,19 +1,15 @@
 services:
-  # 1. Nginx 反向代理 (新增)
-  nginx:
-    image: nginx:alpine
-    container_name: library_nginx
+  caddy:
+    image: caddy:alpine
+    container_name: library_caddy
     restart: always
     ports:
-      - "80:80"   # HTTP
-      - "443:443" # HTTPS
+      - "80:80"
+      - "443:443"
     volumes:
-      # 挂载配置文件
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      # 挂载证书
-      - ./nginx/ssl:/etc/nginx/ssl
-      # 挂载上传文件夹 (为了让 Nginx 直接服务静态图片，性能更高)
-      - ./backend/uploads:/usr/share/nginx/html/uploads
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/ssl:/etc/caddy/ssl
+      - ./backend/uploads:/var/www/uploads
     depends_on:
       - app
     networks:
