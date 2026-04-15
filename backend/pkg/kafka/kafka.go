@@ -1,80 +1,104 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/Dailiduzhou/library_manage_sys/internal/ports"
-	"github.com/IBM/sarama"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 var (
 	defaultProducer ports.Producer
-	consumerGroup   sarama.ConsumerGroup
+	producerClient  *kgo.Client
+	consumerClient  *kgo.Client
 )
 
-// NewConfig creates a Sarama config with the given Kafka version.
-func NewConfig(version string) (*sarama.Config, error) {
-	cfg := sarama.NewConfig()
-	parsedVersion, err := sarama.ParseKafkaVersion(version)
-	if err != nil {
-		return nil, fmt.Errorf("invalid kafka version %q: %w", version, err)
-	}
-	cfg.Version = parsedVersion
-	cfg.Producer.Return.Successes = true
-	return cfg, nil
+// Config keeps Kafka settings for compatibility during client migration.
+type Config struct {
+	Version string
 }
 
-// InitProducer initializes a global SyncProducer and returns a Producer wrapper.
-func InitProducer(brokers []string, cfg *sarama.Config) (ports.Producer, error) {
-	producer, err := sarama.NewSyncProducer(normalizeBrokers(brokers), cfg)
+// NewConfig keeps the existing version input path for compatibility.
+func NewConfig(version string) (*Config, error) {
+	if strings.TrimSpace(version) == "" {
+		return nil, fmt.Errorf("kafka version cannot be empty")
+	}
+	return &Config{Version: version}, nil
+}
+
+// InitProducer initializes a global Kafka producer and returns a Producer wrapper.
+func InitProducer(brokers []string, _ *Config) (ports.Producer, error) {
+	normalized := normalizeBrokers(brokers)
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(normalized...),
+	)
 	if err != nil {
 		return nil, err
 	}
-	defaultProducer = &saramaProducer{producer: producer}
+
+	producerClient = client
+	defaultProducer = &franzProducer{client: producerClient}
 	return defaultProducer, nil
 }
 
-// InitConsumerGroup initializes a global ConsumerGroup.
-func InitConsumerGroup(brokers []string, groupID string, cfg *sarama.Config) (sarama.ConsumerGroup, error) {
-	group, err := sarama.NewConsumerGroup(normalizeBrokers(brokers), groupID, cfg)
+// InitConsumerGroup initializes a global consumer client.
+func InitConsumerGroup(brokers []string, groupID string, topics []string, _ *Config) (*kgo.Client, error) {
+	normalizedBrokers := normalizeBrokers(brokers)
+	normalizedTopics := normalizeBrokers(topics)
+
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(normalizedBrokers...),
+		kgo.ConsumerGroup(strings.TrimSpace(groupID)),
+		kgo.ConsumeTopics(normalizedTopics...),
+		kgo.DisableAutoCommit(),
+	)
 	if err != nil {
 		return nil, err
 	}
-	consumerGroup = group
-	return consumerGroup, nil
+
+	consumerClient = client
+	return consumerClient, nil
 }
 
 // Close closes initialized Kafka clients.
 func Close() error {
 	var closeErr error
+	if producerClient != nil {
+		producerClient.Close()
+		producerClient = nil
+	}
+	if consumerClient != nil {
+		consumerClient.Close()
+		consumerClient = nil
+	}
 	if defaultProducer != nil {
-		if p, ok := defaultProducer.(*saramaProducer); ok && p.producer != nil {
-			if err := p.producer.Close(); err != nil {
-				closeErr = err
-			}
+		if p, ok := defaultProducer.(*franzProducer); ok && p.client != nil {
+			p.client = nil
 		}
+		defaultProducer = nil
 	}
-	if consumerGroup != nil {
-		if err := consumerGroup.Close(); err != nil && closeErr == nil {
-			closeErr = err
-		}
-	}
+
 	return closeErr
 }
 
-type saramaProducer struct {
-	producer sarama.SyncProducer
+type franzProducer struct {
+	client *kgo.Client
 }
 
-func (p *saramaProducer) SendMessage(topic, key string, value []byte) error {
-	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Key:   sarama.StringEncoder(key),
-		Value: sarama.ByteEncoder(value),
+func (p *franzProducer) SendMessage(topic, key string, value []byte) error {
+	if p.client == nil {
+		return fmt.Errorf("kafka producer is not initialized")
 	}
-	_, _, err := p.producer.SendMessage(msg)
-	return err
+
+	msg := &kgo.Record{
+		Topic: topic,
+		Key:   []byte(key),
+		Value: value,
+	}
+
+	return p.client.ProduceSync(context.Background(), msg).FirstErr()
 }
 
 func normalizeBrokers(brokers []string) []string {

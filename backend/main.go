@@ -32,6 +32,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	_ "github.com/Dailiduzhou/library_manage_sys/docs"
 	swaggerFiles "github.com/swaggo/files"
@@ -46,15 +47,16 @@ func main() {
 	config.InitAdmin(config.DB)
 
 	kafkaConfig := config.LoadKafkaConfig()
-	saramaConfig, err := kafkainfra.NewConfig(kafkaConfig.Version)
+	kafkaClientConfig, err := kafkainfra.NewConfig(kafkaConfig.Version)
 	if err != nil {
 		logger.Fatalf("Kafka 配置错误: %v", err)
 	}
-	producer, err := kafkainfra.InitProducer(kafkaConfig.Brokers, saramaConfig)
+	producer, err := kafkainfra.InitProducer(kafkaConfig.Brokers, kafkaClientConfig)
 	if err != nil {
 		logger.Fatalf("Kafka Producer 初始化失败: %v", err)
 	}
-	consumerGroup, err := kafkainfra.InitConsumerGroup(kafkaConfig.Brokers, kafkaConfig.GroupID, saramaConfig)
+	consumerTopics := []string{kafkaConfig.BorrowedTopic, kafkaConfig.ReturnedTopic}
+	consumerClient, err := kafkainfra.InitConsumerGroup(kafkaConfig.Brokers, kafkaConfig.GroupID, consumerTopics, kafkaClientConfig)
 	if err != nil {
 		logger.Fatalf("Kafka ConsumerGroup 初始化失败: %v", err)
 	}
@@ -117,16 +119,28 @@ func main() {
 	var consumerWG sync.WaitGroup
 	consumerWG.Add(1)
 	consumerHandler := consumers.NewBorrowEventHandler()
-	consumerTopics := []string{kafkaConfig.BorrowedTopic, kafkaConfig.ReturnedTopic}
 	go func() {
 		defer consumerWG.Done()
+
 		for {
-			if err := consumerGroup.Consume(consumerCtx, consumerTopics, consumerHandler); err != nil {
-				logger.Infof("Kafka 消费失败: %v", err)
-			}
 			if consumerCtx.Err() != nil {
 				return
 			}
+
+			fetches := consumerClient.PollFetches(consumerCtx)
+			for _, fetchErr := range fetches.Errors() {
+				if consumerCtx.Err() != nil {
+					return
+				}
+				logger.Infof("Kafka 消费失败: topic=%s partition=%d err=%v", fetchErr.Topic, fetchErr.Partition, fetchErr.Err)
+			}
+
+			fetches.EachRecord(func(record *kgo.Record) {
+				_ = consumerHandler.HandleMessage(record.Topic, record.Partition, record.Offset, record.Value)
+				if err := consumerClient.CommitRecords(consumerCtx, record); err != nil && consumerCtx.Err() == nil {
+					logger.Infof("Kafka 提交位点失败: topic=%s partition=%d offset=%d err=%v", record.Topic, record.Partition, record.Offset, err)
+				}
+			})
 		}
 	}()
 
